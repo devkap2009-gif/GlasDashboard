@@ -11,8 +11,9 @@ android {
         applicationId = "de.glas.dashboard"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        val run = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionCode = run
+        versionName = "1.$run"
     }
 
     // fester Schlüssel, damit Updates sich über die alte Version installieren lassen

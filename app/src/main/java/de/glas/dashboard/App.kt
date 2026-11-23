@@ -11,7 +11,9 @@ class App : Application() {
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             runCatching {
                 getSharedPreferences("crash", Context.MODE_PRIVATE).edit()
-                    .putString("last", android.util.Log.getStackTraceString(e).take(6000))
+                    .putString("last", "Version " + runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrDefault("?") +
+                        " · " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date()) + "\n" +
+                        android.util.Log.getStackTraceString(e).take(6000))
                     .commit()
             }
             previous?.uncaughtException(t, e)

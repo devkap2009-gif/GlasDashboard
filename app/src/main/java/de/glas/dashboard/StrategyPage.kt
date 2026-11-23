@@ -287,6 +287,9 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
         t.addView(ui.chips(impact.map { it.first } + "Neutral", if (n.value == null) 4 else curI) { i ->
             n.value = if (i == 4) null else impact[i].second; saveMap(); renderEditor(); renderSummary()
         }, ui.lpMatch(top = 4))
+        val aiStatus = ui.small("")
+        t.addView(ui.pill("✨ KI: Folgen vorschlagen", true) { aiSuggest(n.id, aiStatus) }, ui.lpWrap(top = 14))
+        t.addView(aiStatus, ui.lpMatch(top = 4))
         t.addView(ui.label("Neue Folge"), ui.lpMatch(top = 14))
         t.addView(addRow("Was folgt daraus?") { txt ->
             val c = map.add(txt); map.link(n.id, c.id, 0.4); mapSel = c.id; saveMap(); mapView?.selected = c.id; renderEditor(); renderSummary()
@@ -331,6 +334,39 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
             }, ui.lpMatch(top = 6))
         }
         editorBox.addView(t)
+    }
+
+    /** Gemini schlägt direkte Folgen mit Wahrscheinlichkeit und Wert vor und hängt sie an. */
+    private fun aiSuggest(id: Int, status: TextView) {
+        if (Gemini.key(ctx).isBlank()) { status.text = "Erst im Bereich „Gemini“ den API-Schlüssel eintragen."; return }
+        val n = map.node(id) ?: return
+        status.text = "Gemini denkt nach …"
+        val prompt = "Ereignis: „${n.text}“.\nKontext – meine bisherige Implikations-Karte:\n${map.describe()}\n\n" +
+            "Nenne 3 bis 4 realistische, noch nicht enthaltene direkte Folgen dieses Ereignisses. " +
+            "Antworte NUR als JSON-Array: [{\"folge\": \"max. 6 Wörter\", \"wahrscheinlichkeit\": 0.0-1.0, \"wert\": -100 bis 100}]"
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        Thread {
+            val r = runCatching {
+                val txt = Gemini.generate(ctx, listOf(Gemini.Msg(true, prompt)), json = true)
+                val start = txt.indexOf('['); val end = txt.lastIndexOf(']')
+                JSONArray(if (start >= 0 && end > start) txt.substring(start, end + 1) else txt)
+            }
+            h.post {
+                r.fold({ arr ->
+                    var added = 0
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val t = o.optString("folge")
+                        if (t.isBlank()) continue
+                        val c = map.add(t, 0.0, o.optDouble("wert", 0.0).takeIf { !it.isNaN() && it != 0.0 })
+                        map.link(id, c.id, o.optDouble("wahrscheinlichkeit", 0.5).coerceIn(0.0, 1.0))
+                        added++
+                    }
+                    saveMap(); mapView?.replay(); renderEditor(); renderSummary()
+                    if (::editorBox.isInitialized && added == 0) status.text = "Keine Vorschläge erhalten."
+                }, { status.text = "⚠ ${it.message}" })
+            }
+        }.start()
     }
 
     private fun renderSummary() {

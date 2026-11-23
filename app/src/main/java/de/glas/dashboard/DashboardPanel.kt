@@ -76,6 +76,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     private val start = StartPage(ui, close = { close() }, openProfile = { goTo("profile") })
     private val all: Map<String, Page> = linkedMapOf<String, Page>().apply {
         put("start", start)
+        put("gemini", GeminiPage(ui))
         put("strategy", StrategyPage(ui) { close() })
         put("logic", LogicPage(ui))
         put("impl", ImplPage(ui))
@@ -90,8 +91,17 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     private lateinit var pages: List<Page>
 
     private fun orderedPages(): List<Page> {
-        val saved = Prefs.pageOrder(ctx).mapNotNull { all[it] }
-        return saved + all.values.filter { it !in saved }
+        val result = Prefs.pageOrder(ctx).mapNotNull { all[it] }.toMutableList()
+        // neue Bereiche an ihrer Standardstelle einfügen (direkt hinter ihrem Vorgänger)
+        val keys = all.keys.toList()
+        keys.forEachIndexed { i, k ->
+            val p = all[k] ?: return@forEachIndexed
+            if (p in result) return@forEachIndexed
+            val prev = keys.take(i).lastOrNull { pk -> result.any { it.key == pk } }
+            val at = if (prev == null) 0 else result.indexOfFirst { it.key == prev } + 1
+            result.add(at, p)
+        }
+        return result
     }
 
     private inner class Holder(val frame: FrameLayout) : RecyclerView.ViewHolder(frame)

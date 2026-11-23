@@ -75,7 +75,7 @@ object Prefs {
     fun focusTotal(c: Context) = sp(c).getInt("focus_total", 0)
 
     fun pageOrder(c: Context): List<String> =
-        (sp(c).getString("page_order", null) ?: "start,strategy,logic,impl,games,notes,profile").split(',').filter { it.isNotBlank() }
+        (sp(c).getString("page_order", null) ?: "start,gemini,strategy,logic,impl,games,notes,profile").split(',').filter { it.isNotBlank() }
     fun setPageOrder(c: Context, keys: List<String>) = sp(c).edit().putString("page_order", keys.joinToString(",")).apply()
 
     /** Griff-Position in Pixeln (y), -1 = Standard */

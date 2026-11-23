@@ -55,7 +55,9 @@ class MainActivity : Activity() {
         }
 
         col.addView(text("Glas-Dashboard", 34f, Holo.light).apply { setShadowLayer(dpf(14f), 0f, 0f, Holo.ICE) })
-        col.addView(text("Ein transparentes Panel, das über allen Apps liegt. Zwei Finger oben am Rand nach unten ziehen – schon ist es da.", 16f).apply {
+        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrDefault("?")
+        col.addView(text("Version $version", 13f).apply { setTextColor(Holo.ICE) })
+        col.addView(text("Ein transparentes Panel über allen Apps. Tippe den leuchtenden Punkt an – schon ist es da.", 16f).apply {
             alpha = 0.8f; setPadding(0, dp(6), 0, dp(18))
         })
 

@@ -24,7 +24,7 @@ class UiSmokeTest {
         val pages = listOf(
             StrategyPage(ui), LogicPage(ui), ImplPage(ui), GamesPage(ui),
             NotesPage(ui) {}, ProfilePage(ui, { emptyList() }, {}, {}),
-            StartPage(ui, {}, {})
+            StartPage(ui, {}, {}), GeminiPage(ui)
         )
         pages.forEach { it.onShow(); it.onHide() }
     }
