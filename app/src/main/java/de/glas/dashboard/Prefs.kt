@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class Todo(val text: String, val done: Boolean)
+data class Note(val id: Long, val title: String, val body: String, val updated: Long)
 
 /** Kleine Hülle um SharedPreferences. */
 object Prefs {
@@ -34,7 +35,7 @@ object Prefs {
 
     /** Fokus-Sitzungen pro Tag (Schlüssel = Tagesnummer) */
     fun focusCount(c: Context, day: Long) = sp(c).getInt("focus_$day", 0)
-    fun addFocus(c: Context, day: Long) = sp(c).edit().putInt("focus_$day", focusCount(c, day) + 1).apply()
+    fun addFocus(c: Context, day: Long) = sp(c).edit().putInt("focus_$day", focusCount(c, day) + 1).putInt("focus_total", focusTotal(c) + 1).apply()
 
     /** Gedankenbuch: Antworten auf die Denkfrage */
     fun journal(c: Context): MutableList<Triple<Long, String, String>> {
@@ -55,6 +56,57 @@ object Prefs {
         list.take(200).forEach { a.put(JSONObject().put("t", it.first).put("q", it.second).put("a", it.third)) }
         sp(c).edit().putString("journal", a.toString()).apply()
     }
+
+    fun int(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
+    fun setInt(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
+    fun str(c: Context, k: String, d: String) = sp(c).getString(k, d) ?: d
+    fun setStr(c: Context, k: String, v: String) = sp(c).edit().putString(k, v).apply()
+
+    fun profile(c: Context, k: String) = sp(c).getString("prof_$k", "") ?: ""
+    fun setProfile(c: Context, k: String, v: String) = sp(c).edit().putString("prof_$k", v).apply()
+
+    fun focusTotal(c: Context) = sp(c).getInt("focus_total", 0)
+
+    fun pageOrder(c: Context): List<String> =
+        (sp(c).getString("page_order", null) ?: "start,logic,impl,games,notes,profile").split(',').filter { it.isNotBlank() }
+    fun setPageOrder(c: Context, keys: List<String>) = sp(c).edit().putString("page_order", keys.joinToString(",")).apply()
+
+    /** Griff-Position in Pixeln (y), -1 = Standard */
+    fun handleY(c: Context) = sp(c).getInt("handle_y", -1)
+    fun setHandleY(c: Context, v: Int) = sp(c).edit().putInt("handle_y", v).apply()
+
+    fun notes(c: Context): List<Note> {
+        val raw = sp(c).getString("notes", null)
+        val list = mutableListOf<Note>()
+        if (raw == null) {
+            // alte Einzel-Notiz übernehmen
+            val old = note(c)
+            if (old.isNotBlank()) list += Note(1L, "Notiz", old, System.currentTimeMillis())
+            return list
+        }
+        try {
+            val a = JSONArray(raw)
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                list += Note(o.optLong("id"), o.optString("title"), o.optString("body"), o.optLong("updated"))
+            }
+        } catch (e: Exception) {}
+        return list.sortedByDescending { it.updated }
+    }
+
+    private fun writeNotes(c: Context, list: List<Note>) {
+        val a = JSONArray()
+        list.forEach { a.put(JSONObject().put("id", it.id).put("title", it.title).put("body", it.body).put("updated", it.updated)) }
+        sp(c).edit().putString("notes", a.toString()).apply()
+    }
+
+    fun saveNote(c: Context, n: Note) {
+        val list = notes(c).filter { it.id != n.id }.toMutableList()
+        list.add(0, n)
+        writeNotes(c, list)
+    }
+
+    fun deleteNote(c: Context, id: Long) = writeNotes(c, notes(c).filter { it.id != id })
 
     fun note(c: Context) = sp(c).getString("note", "") ?: ""
     fun setNote(c: Context, v: String) = sp(c).edit().putString("note", v).apply()

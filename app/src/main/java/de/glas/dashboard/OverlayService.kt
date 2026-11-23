@@ -130,20 +130,26 @@ class OverlayService : Service() {
         val mode = Prefs.openMode(this)
         val thick = dp(Prefs.stripHeight(this))
         val top = pos == 0
+        val screenW = resources.displayMetrics.widthPixels
+        val screenH = resources.displayMetrics.heightPixels
+        val sideLen = dp(160)
         val lp = WindowManager.LayoutParams(
             if (top) WindowManager.LayoutParams.MATCH_PARENT else thick,
-            if (top) thick else dp(200),
+            if (top) thick else sideLen,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = when (pos) {
-                0 -> Gravity.TOP or Gravity.START
-                1 -> Gravity.END or Gravity.CENTER_VERTICAL
-                else -> Gravity.START or Gravity.CENTER_VERTICAL
+            gravity = Gravity.TOP or Gravity.START
+            val savedY = Prefs.handleY(this@OverlayService)
+            if (top) {
+                x = 0
+                y = if (savedY >= 0) savedY.coerceIn(statusBarHeight(), screenH / 2) else statusBarHeight()
+            } else {
+                x = if (pos == 1) screenW - thick else 0
+                y = if (savedY >= 0) savedY.coerceIn(statusBarHeight(), screenH - sideLen) else (screenH - sideLen) / 2
             }
-            if (pos == 0) y = statusBarHeight()   // direkt unter der Statusleiste
         }
 
         val v = FrameLayout(this)
@@ -160,15 +166,17 @@ class OverlayService : Service() {
 
         val allowSwipe = mode != 1
         val allowHold = mode != 0
-        val slop = dpf(12f)
+        val slop = dpf(14f)
         var startY = 0f
         var dy = 0f
         var downX = 0f
         var downY = 0f
+        var startLpX = 0
+        var startLpY = 0
         var tracking = false
         var dragging = false
+        var moving = false
         var held = false
-        val screenH = resources.displayMetrics.heightPixels.toFloat()
         val holdRunnable = Runnable {
             held = true
             v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -178,26 +186,38 @@ class OverlayService : Service() {
         v.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    tracking = false; dragging = false; held = false
+                    tracking = false; dragging = false; held = false; moving = false
                     downX = e.rawX; downY = e.rawY
+                    startLpX = lp.x; startLpY = lp.y
                     if (allowHold) v.postDelayed(holdRunnable, 450)
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     v.removeCallbacks(holdRunnable)
-                    if (allowSwipe && e.pointerCount == 2 && !held) {
+                    if (allowSwipe && e.pointerCount == 2 && !held && !moving) {
                         startY = (e.getY(0) + e.getY(1)) / 2f
                         dy = 0f
                         tracking = true
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (abs(e.rawX - downX) > slop || abs(e.rawY - downY) > slop) v.removeCallbacks(holdRunnable)
+                    val mx = e.rawX - downX; val my = e.rawY - downY
+                    if (abs(mx) > slop || abs(my) > slop) v.removeCallbacks(holdRunnable)
                     if (tracking && e.pointerCount >= 2) {
                         dy = (e.getY(0) + e.getY(1)) / 2f - startY
                         if (dy > dpf(8f) || dragging) {
                             dragging = true
                             panel().drag(dy / (screenH * 0.45f))
                         }
+                    } else if (!tracking && !held && e.pointerCount == 1 && (moving || abs(mx) > slop || abs(my) > slop)) {
+                        // Griff mit einem Finger verschieben
+                        moving = true
+                        if (top) {
+                            lp.y = (startLpY + my.toInt()).coerceIn(statusBarHeight(), screenH / 2)
+                        } else {
+                            lp.y = (startLpY + my.toInt()).coerceIn(statusBarHeight(), screenH - sideLen)
+                            lp.x = (startLpX + mx.toInt()).coerceIn(0, screenW - thick)
+                        }
+                        runCatching { wm.updateViewLayout(v, lp) }
                     }
                 }
                 MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -206,6 +226,17 @@ class OverlayService : Service() {
                         tracking = false
                         if (dragging) panel().settle(dy > dpf(70f))
                         dragging = false
+                    }
+                    if (moving && e.actionMasked != MotionEvent.ACTION_POINTER_UP) {
+                        moving = false
+                        Prefs.setHandleY(this, lp.y)
+                        if (!top) {
+                            // an den nächsten Rand einrasten
+                            val right = lp.x + thick / 2 > screenW / 2
+                            lp.x = if (right) screenW - thick else 0
+                            Prefs.setPosition(this, if (right) 1 else 2)
+                            runCatching { wm.updateViewLayout(v, lp) }
+                        }
                     }
                 }
             }

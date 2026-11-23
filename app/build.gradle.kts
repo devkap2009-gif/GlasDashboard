@@ -33,3 +33,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
+
+dependencies {
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
+    testImplementation("junit:junit:4.13.2")
+}

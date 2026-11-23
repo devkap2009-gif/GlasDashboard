@@ -94,6 +94,7 @@ class MainActivity : Activity() {
         col.addView(text("Position der Zone", 15f).apply { setPadding(0, dp(14), 0, dp(4)) })
         col.addView(radios(listOf("Oben (unter der Statusleiste)", "Rechter Rand", "Linker Rand"), Prefs.position(this)) { i ->
             Prefs.setPosition(this, i)
+            Prefs.setHandleY(this, -1)
             refreshStrip()
         })
 
@@ -130,6 +131,8 @@ class MainActivity : Activity() {
             "So öffnest du das Dashboard:\n" +
             "• Auf die Zone (den kleinen Griff) tippen und kurz gedrückt halten, bis es vibriert.\n" +
             "• Oder zwei Finger in der Zone ansetzen und nach unten ziehen (Position „Oben“).\n" +
+            "• Griff verschieben: mit einem Finger ziehen – am Rand rastet er ein.\n" +
+            "• Im Panel wischst du nach links und rechts zwischen Start, Logik, Implikationen, Spiele, Notizen und Profil.\n" +
             "• Oder: Schnelleinstellungen bearbeiten (Stift-Symbol) und die Kachel „Dashboard“ hinzufügen.\n" +
             "• Oder: auf die Benachrichtigung „Dashboard bereit“ tippen.\n\n" +
             "Schließen: zwei Finger nach oben, daneben tippen oder Zurück.\n\n" +
