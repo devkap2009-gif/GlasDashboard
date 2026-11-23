@@ -59,6 +59,16 @@ class MainActivity : Activity() {
             alpha = 0.8f; setPadding(0, dp(6), 0, dp(18))
         })
 
+        // Letzten Absturz anzeigen (falls vorhanden)
+        val crashPrefs = getSharedPreferences("crash", MODE_PRIVATE)
+        crashPrefs.getString("last", null)?.let { trace ->
+            col.addView(text("Letzter Absturz – bitte Screenshot an Claude schicken:", 15f).apply { setTextColor(0xFFFF8A8A.toInt()) })
+            col.addView(text(trace.lines().take(14).joinToString("\n"), 11f).apply {
+                typeface = android.graphics.Typeface.MONOSPACE; setTextIsSelectable(true); setPadding(0, dp(6), 0, dp(6))
+            })
+            col.addView(button("Meldung ausblenden") { crashPrefs.edit().remove("last").apply(); recreate() }, lp(bottom = 18))
+        }
+
         status = text("", 15f).apply { setPadding(dp(14), dp(12), dp(14), dp(12)) }
         col.addView(status, lp(bottom = 18))
 
