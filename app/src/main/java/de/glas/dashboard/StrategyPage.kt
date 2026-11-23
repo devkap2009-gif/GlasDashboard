@@ -17,6 +17,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 /** Kleiner JSON-Speicher für den Strategie-Planer. */
@@ -34,24 +35,17 @@ private fun List<JSONObject>.toArr(): JSONArray = JSONArray().also { a -> forEac
  * Strategie-Planer: Ziele → Strategien → Schritte, Entscheidungsmatrix,
  * SWOT-Analyse, Szenarien mit Erwartungswert.
  */
-class StrategyPage(private val ui: Ui) : Page {
+class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Page {
     override val key = "strategy"
     override val title = "Strategie"
 
     private val ctx = ui.ctx
     private val col = ui.column()
     override val view: View = ui.page(col)
-    private var tool = Prefs.int(ctx, "strat_tool", 0)
+    private var tool = Prefs.int(ctx, "strat_tool", 4)
+    private val chipOrder = intArrayOf(4, 0, 1, 2, 3)   // Anzeige-Reihenfolge → Werkzeug
     private val box = ui.column()
     private var openGoal: Long? = null
-
-    init {
-        col.addView(ui.chips(listOf("Ziele", "Entscheidung", "SWOT", "Szenarien"), tool) {
-            tool = it; Prefs.setInt(ctx, "strat_tool", it); openGoal = null; render()
-        }, ui.lpMatch(bottom = 10))
-        col.addView(box)
-        render()
-    }
 
     override fun onShow() = render()
 
@@ -61,7 +55,8 @@ class StrategyPage(private val ui: Ui) : Page {
             0 -> { val g = openGoal; if (g == null) goals() else goalDetail(g) }
             1 -> decision()
             2 -> swot()
-            else -> scenarios()
+            3 -> scenarios()
+            else -> mapTool()
         }
     }
 
@@ -83,6 +78,211 @@ class StrategyPage(private val ui: Ui) : Page {
     }
 
     private fun meter(pct: Int) = ui.bar().apply { max = 100; progress = pct.coerceIn(0, 100) }
+
+    // =====================================================================
+    // Implikations-Karte (Mindmap mit Wahrscheinlichkeiten)
+    // =====================================================================
+
+    private val map = MapModel().also { m ->
+        val saved = Store.obj(ctx, "map")
+        if (saved.has("nodes")) m.load(saved) else { val ex = MapModel.example(); m.load(ex.toJson()) }
+    }
+    private var mapView: ImplMapView? = null
+    private var mapSel: Int? = null
+
+    private fun saveMap() { Store.put(ctx, "map", map.toJson()); mapView?.relayout() }
+
+    private fun mapTool() {
+        val t = ui.tile()
+        t.addView(ui.label("Implikations-Karte"))
+        t.addView(ui.small("Knoten antippen zum Bearbeiten · ziehen = verschieben · zwei Finger = zoomen. Linienstärke und Tempo der Punkte zeigen, wie wahrscheinlich eine Folge eintritt."), ui.lpMatch(top = 4))
+        val mv = ImplMapView(ctx, map) { id -> mapSel = id; renderEditor() }
+        mv.selected = mapSel
+        mapView = mv
+        t.addView(mv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(460)).apply { topMargin = ui.dp(10) })
+        mv.relayout(); mv.replay()
+        t.addView(ui.rowOf(ui.pill("Zentrieren") { mv.center() }, ui.pill("▶ Abspielen") { mv.replay() }), ui.lpMatch(top = 10))
+        box.addView(t)
+
+        editorBox = ui.column()
+        box.addView(editorBox)
+        renderEditor()
+
+        summaryBox = ui.column()
+        box.addView(summaryBox)
+        renderSummary()
+
+        val more = ui.tile()
+        more.addView(ui.label("Karte"))
+        more.addView(addRow("Neuer Ausgangspunkt (z. B. eine Entscheidung)") { txt ->
+            val n = map.add(txt, 1.0); mapSel = n.id; saveMap(); render()
+        }, ui.lpMatch(top = 8))
+        more.addView(ui.rowOf(
+            ui.pill("Aus Implikationen") { importRules() },
+            ui.pill("Beispiel") { map.load(MapModel.example().toJson()); mapSel = null; saveMap(); render() },
+            ui.pill("Leeren") { map.load(JSONObject()); mapSel = null; saveMap(); render() }
+        ), ui.lpMatch(top = 10))
+        box.addView(more)
+
+        box.addView(geminiTile())
+    }
+
+    private lateinit var editorBox: LinearLayout
+    private lateinit var summaryBox: LinearLayout
+
+    private fun renderEditor() {
+        if (!::editorBox.isInitialized) return
+        editorBox.removeAllViews()
+        val n = mapSel?.let { map.node(it) } ?: return
+        val t = ui.tile()
+        t.addView(ui.label("Ausgewählt"))
+        val name = ui.input("Ereignis / Zustand").apply { setText(n.text); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f) }
+        name.setOnEditorActionListener { v, a, _ -> if (a == EditorInfo.IME_ACTION_DONE) { n.text = v.text.toString(); saveMap(); renderSummary(); true } else false }
+        name.setOnFocusChangeListener { v, has -> if (!has) { n.text = (v as EditText).text.toString(); saveMap(); renderSummary() } }
+        t.addView(name, ui.lpMatch(top = 6))
+        t.addView(ui.title("Gesamtwahrscheinlichkeit: ${MapModel.pct(n.p)}").apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f) }, ui.lpMatch(top = 10))
+
+        fun stepper(label: String, value: String, minus: () -> Unit, plus: () -> Unit) = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(ui.small(label), ui.weight())
+            addView(ui.pill("−") { minus() })
+            addView(ui.label(value).apply { gravity = Gravity.CENTER; minWidth = ui.dp(64) })
+            addView(ui.pill("+") { plus() })
+        }
+        val root = map.isRoot(n.id)
+        t.addView(stepper(if (root) "Wahrscheinlichkeit (Ausgang)" else "Eigene Grundchance", MapModel.pct(n.base),
+            { n.base = ((n.base - 0.1).coerceAtLeast(0.0) * 100).toInt() / 100.0; saveMap(); renderEditor(); renderSummary() },
+            { n.base = ((n.base + 0.1).coerceAtMost(1.0) * 100).toInt() / 100.0; saveMap(); renderEditor(); renderSummary() }), ui.lpMatch(top = 8))
+        val v = n.value
+        t.addView(stepper("Wert / Nutzen", v?.toInt()?.toString() ?: "–",
+            { n.value = (v ?: 0.0) - 10; saveMap(); renderEditor(); renderSummary() },
+            { n.value = (v ?: 0.0) + 10; saveMap(); renderEditor(); renderSummary() }), ui.lpMatch(top = 6))
+        if (v != null) t.addView(ui.pill("Wert entfernen") { n.value = null; saveMap(); renderEditor(); renderSummary() }, ui.lpWrap(top = 6))
+
+        // ausgehende Folgen
+        val outs = map.outgoing(n.id)
+        if (outs.isNotEmpty()) t.addView(ui.label("Folgen"), ui.lpMatch(top = 14))
+        outs.forEach { e ->
+            val b = map.node(e.b) ?: return@forEach
+            t.addView(ui.body((if (e.neg) "verhindert → " else "führt zu → ") + b.text, 15f).apply { setTextColor(if (e.neg) 0xFFFF6B7A.toInt() else Holo.WHITE) }, ui.lpMatch(top = 8))
+            val row = stepper("bedingt", MapModel.pct(e.p),
+                { e.p = ((e.p - 0.1).coerceAtLeast(0.0) * 100).toInt() / 100.0; saveMap(); renderEditor(); renderSummary() },
+                { e.p = ((e.p + 0.1).coerceAtMost(1.0) * 100).toInt() / 100.0; saveMap(); renderEditor(); renderSummary() })
+            row.addView(xBtn { map.edges.remove(e); saveMap(); renderEditor(); renderSummary() })
+            t.addView(row)
+        }
+        t.addView(ui.label("Neue Folge"), ui.lpMatch(top = 14))
+        t.addView(addRow("Was folgt daraus?") { txt ->
+            val c = map.add(txt); map.link(n.id, c.id, 0.5); mapSel = c.id; saveMap(); mapView?.selected = c.id; renderEditor(); renderSummary()
+        }, ui.lpMatch(top = 6))
+        t.addView(addRow("Was wird dadurch verhindert?") { txt ->
+            val c = map.add(txt, 0.5); map.link(n.id, c.id, 0.5, neg = true); saveMap(); renderEditor(); renderSummary()
+        }, ui.lpMatch(top = 6))
+        // mit vorhandenem Knoten verbinden
+        val others = map.nodes.filter { it.id != n.id && map.outgoing(n.id).none { e -> e.b == it.id } }
+        if (others.isNotEmpty()) {
+            t.addView(ui.small("Mit vorhandenem Knoten verbinden:"), ui.lpMatch(top = 10))
+            t.addView(ui.chips(others.map { it.text.take(24) }, -1) { i ->
+                map.link(n.id, others[i].id, 0.5); saveMap(); renderEditor(); renderSummary()
+            }, ui.lpMatch(top = 6))
+        }
+        t.addView(ui.rowOf(
+            ui.pill("Knoten löschen") { map.remove(n.id); mapSel = null; mapView?.selected = null; saveMap(); renderEditor(); renderSummary() },
+            ui.pill("Fertig") { mapSel = null; mapView?.selected = null; renderEditor() }
+        ), ui.lpMatch(top = 14))
+        editorBox.addView(t)
+    }
+
+    private fun renderSummary() {
+        if (!::summaryBox.isInitialized) return
+        summaryBox.removeAllViews()
+        map.compute()
+        val t = ui.tile()
+        t.addView(ui.label("Auswertung"))
+        val leaves = map.nodes.filter { map.outgoing(it.id).isEmpty() && !map.isRoot(it.id) }.sortedByDescending { it.p }
+        if (leaves.isEmpty()) { t.addView(ui.small("Füge Folgen hinzu, dann siehst du hier die wahrscheinlichsten Endpunkte."), ui.lpMatch(top = 6)) }
+        leaves.take(5).forEach { n ->
+            t.addView(ui.small("${n.text}  ·  ${MapModel.pct(n.p)}"), ui.lpMatch(top = 10))
+            t.addView(meter((n.p * 100).toInt()), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(5)).apply { topMargin = ui.dp(4) })
+        }
+        map.expectedValue()?.let { ev ->
+            t.addView(ui.small("Erwartungswert aller bewerteten Folgen"), ui.lpMatch(top = 14))
+            t.addView(ui.big("%.1f".format(ev)))
+        }
+        // Hebel: welcher Pfeil bewegt den Erwartungswert am meisten?
+        val base = map.expectedValue()
+        if (base != null && map.edges.isNotEmpty()) {
+            var best: Pair<MapModel.E, Double>? = null
+            for (e in map.edges) {
+                val old = e.p
+                e.p = (old + 0.1).coerceAtMost(1.0); map.compute()
+                val gain = (map.expectedValue() ?: 0.0) - base
+                e.p = old
+                if (best == null || abs(gain) > abs(best.second)) best = e to gain
+            }
+            map.compute()
+            best?.let { (e, g) ->
+                val a = map.node(e.a)?.text ?: ""; val b = map.node(e.b)?.text ?: ""
+                t.addView(ui.small("Größter Hebel: „$a → $b“. +10 % an dieser Stelle ändern den Erwartungswert um ${"%+.1f".format(g)}."), ui.lpMatch(top = 10))
+            }
+        }
+        summaryBox.addView(t)
+    }
+
+    /** Übernimmt Regeln aus dem Implikations-Planer als Karte (UND-Bedingungen werden zu einzelnen Pfeilen). */
+    private fun importRules() {
+        try {
+            val rules = Implication.parseRules(Prefs.str(ctx, "impl_rules", ""))
+            val facts = Implication.parseFacts(Prefs.str(ctx, "impl_facts", "")).map { it.key }.toSet()
+            map.load(JSONObject())
+            val ids = HashMap<String, Int>()
+            fun id(l: Implication.Lit): Int = ids.getOrPut(l.key) { map.add(l.toString(), if (l.key in facts) 1.0 else 0.0).id }
+            rules.forEach { r -> r.ifAll.forEach { a -> r.then.forEach { b -> map.link(id(a), id(b), 1.0 / r.ifAll.size.coerceAtLeast(1)) } } }
+            mapSel = null; saveMap(); render()
+        } catch (e: Exception) {
+            editorBox.removeAllViews(); editorBox.addView(ui.tile().apply { addView(ui.small("Import nicht möglich: ${e.message}")) })
+        }
+    }
+
+    // ---------- Gemini ----------
+
+    private fun geminiTile() = ui.tile().apply {
+        addView(ui.label("Mit Gemini weiterdenken"))
+        addView(ui.small("Schickt deine Karte als Text an die Gemini-App (und in die Zwischenablage), damit Gemini übersehene Folgen und realistische Wahrscheinlichkeiten vorschlägt."), ui.lpMatch(top = 4))
+        addView(ui.rowOf(
+            ui.pill("An Gemini senden", true) { sendToGemini() },
+            ui.pill("Gemini öffnen") { openAssistant() }
+        ), ui.lpMatch(top = 10))
+    }
+
+    private fun geminiPrompt() = "Hier ist meine Implikations-Karte (Wahrscheinlichkeiten in %, Werte als Nutzen):\n\n" +
+        map.describe() + "\n\nBitte prüfe: Welche wichtigen Folgen fehlen? Sind die Wahrscheinlichkeiten realistisch? " +
+        "Welche Strategie maximiert den Erwartungswert und senkt das Risiko? Antworte knapp mit konkreten Vorschlägen."
+
+    private fun sendToGemini() {
+        val text = geminiPrompt()
+        runCatching {
+            ctx.getSystemService(android.content.ClipboardManager::class.java)
+                ?.setPrimaryClip(android.content.ClipData.newPlainText("Implikations-Karte", text))
+        }
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, text)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val ok = runCatching { ctx.startActivity(android.content.Intent(send).setPackage("com.google.android.apps.bard")) }.isSuccess ||
+            runCatching {
+                ctx.startActivity(android.content.Intent.createChooser(send, "Karte senden an …").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.isSuccess
+        if (ok) close()
+    }
+
+    private fun openAssistant() {
+        runCatching { ctx.getSystemService(android.content.ClipboardManager::class.java)
+            ?.setPrimaryClip(android.content.ClipData.newPlainText("Implikations-Karte", geminiPrompt())) }
+        val ok = runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_ASSIST).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess ||
+            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VOICE_COMMAND).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
+        if (ok) close()
+    }
 
     // =====================================================================
     // Ziele → Strategien → Schritte
@@ -400,4 +600,14 @@ class StrategyPage(private val ui: Ui) : Page {
     }
 
     private fun Double.fmt() = if (this == Math.floor(this)) "%.0f".format(this) else "%.1f".format(this)
+
+    // Ganz am Ende, damit alle Felder (z. B. die Karte) schon existieren
+    init {
+        col.addView(ui.chips(listOf("Implikations-Karte", "Ziele", "Entscheidung", "SWOT", "Szenarien"), chipOrder.indexOf(tool).coerceAtLeast(0)) {
+            tool = chipOrder[it]; Prefs.setInt(ctx, "strat_tool", tool); openGoal = null; render()
+        }, ui.lpMatch(bottom = 10))
+        col.addView(box)
+        render()
+    }
+
 }

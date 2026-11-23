@@ -31,7 +31,7 @@ class UiSmokeTest {
 
     @Test fun everyGameAndToolOpens() {
         for (i in 0..2) { Prefs.setInt(ctx, "game_sel", i); GamesPage(Ui(ctx)).onShow() }
-        for (i in 0..3) { Prefs.setInt(ctx, "strat_tool", i); StrategyPage(Ui(ctx)).onShow() }
+        for (i in 0..4) { Prefs.setInt(ctx, "strat_tool", i); StrategyPage(Ui(ctx)).onShow() }
         for (i in 0..2) { Prefs.setInt(ctx, "logic_mode", i); LogicPage(Ui(ctx)).onShow() }
     }
 

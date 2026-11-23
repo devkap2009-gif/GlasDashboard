@@ -118,6 +118,32 @@ class Ui(val ctx: Context) {
         setPadding(dp(14), 0, dp(14), 0)
         setActive(this, active)
         setOnClickListener { onClick() }
+        pressable(this)
+    }
+
+    /** Kleines Einsinken beim Antippen. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    fun pressable(v: View) {
+        v.setOnTouchListener { view, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> view.animate().scaleX(0.94f).scaleY(0.94f).setDuration(70).start()
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(android.view.animation.OvershootInterpolator(3f)).start()
+            }
+            false
+        }
+    }
+
+    /** Kacheln einer Seite nacheinander hereingleiten lassen. */
+    fun animateIn(page: View) {
+        val content = (page as? android.view.ViewGroup)?.getChildAt(0) as? android.view.ViewGroup ?: return
+        for (i in 0 until content.childCount) {
+            val c = content.getChildAt(i)
+            c.animate().cancel()
+            c.alpha = 0f; c.translationY = dpf(22f)
+            c.animate().alpha(1f).translationY(0f).setStartDelay(40L * i.coerceAtMost(8)).setDuration(320)
+                .setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        }
     }
 
     fun setActive(v: TextView, active: Boolean) {

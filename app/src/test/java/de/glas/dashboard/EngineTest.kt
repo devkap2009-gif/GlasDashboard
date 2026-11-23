@@ -96,4 +96,20 @@ class EngineTest {
         assertEquals(Chess.State.CHECKMATE, c.state())
         assertEquals("Dh4#", c.notation.last())
     }
+
+    // ---------- Implikations-Karte ----------
+    @Test fun mapProbabilities() {
+        val m = MapModel()
+        val a = m.add("A", 1.0); val b = m.add("B"); val c = m.add("C"); val d = m.add("D", 0.5)
+        m.link(a.id, b.id, 0.8); m.link(b.id, c.id, 0.5); m.link(a.id, c.id, 0.5); m.link(a.id, d.id, 1.0, neg = true)
+        m.compute()
+        assertEquals(0.8, b.p, 1e-9)
+        assertEquals(1 - (1 - 0.4) * (1 - 0.5), c.p, 1e-9)   // Noisy-OR
+        assertEquals(0.0, d.p, 1e-9)                          // vollständig verhindert
+        val ex = MapModel.example(); ex.compute()
+        assertTrue(ex.nodes.all { it.p in 0.0..1.0 })
+        assertNotNull(ex.expectedValue())
+        val copy = MapModel(); copy.load(ex.toJson())
+        assertEquals(ex.nodes.size, copy.nodes.size); assertEquals(ex.edges.size, copy.edges.size)
+    }
 }

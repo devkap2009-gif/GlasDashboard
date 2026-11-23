@@ -32,6 +32,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import kotlin.math.abs
+import kotlin.math.min
 
 private const val SCRIM_MAX_ALPHA = 215
 private const val BLUR_MAX = 60
@@ -75,7 +76,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     private val start = StartPage(ui, close = { close() }, openProfile = { goTo("profile") })
     private val all: Map<String, Page> = linkedMapOf<String, Page>().apply {
         put("start", start)
-        put("strategy", StrategyPage(ui))
+        put("strategy", StrategyPage(ui) { close() })
         put("logic", LogicPage(ui))
         put("impl", ImplPage(ui))
         put("games", GamesPage(ui))
@@ -178,10 +179,19 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         // Bereiche
         pager.adapter = adapter
         pager.offscreenPageLimit = all.size
+        // Tiefe beim Wischen: Nachbarseiten werden kleiner und blasser
+        pager.setPageTransformer { page, pos ->
+            val a = min(1f, abs(pos))
+            page.alpha = 1f - 0.55f * a
+            page.scaleX = 1f - 0.08f * a
+            page.scaleY = 1f - 0.08f * a
+            page.rotationY = -12f * pos.coerceIn(-1f, 1f)
+        }
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 highlightTab(position)
                 hideKeyboard()
+                pages.getOrNull(position)?.let { ui.animateIn(it.view) }
                 Prefs.setInt(ctx, "last_page", position)
             }
         })
@@ -364,6 +374,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
             attached = true
             ctx.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.let { showBattery(it) }
             pages.forEach { p -> runCatching { p.onShow() } }
+            pages.getOrNull(pager.currentItem)?.let { p -> root.post { ui.animateIn(p.view) } }
         }
     }
 
