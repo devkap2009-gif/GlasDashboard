@@ -152,20 +152,6 @@ class GamesPage(private val ui: Ui) : Page {
     // Schach-Zustand bleibt erhalten, solange der Dienst läuft
     private val chess = Chess()
 
-    init {
-        col.addView(ui.chips(listOf("Schach", "Würfel-Risiko", "Höher / Tiefer"), game) {
-            game = it; Prefs.setInt(ctx, "game_sel", it); render()
-        }, ui.lpMatch(bottom = 10))
-        p1 = ui.input("Spieler 1").apply { setText(Prefs.str(ctx, "p1", Prefs.profile(ctx, "name").ifBlank { "" })) }
-        p2 = ui.input("Spieler 2").apply { setText(Prefs.str(ctx, "p2", "")) }
-        val names = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        names.addView(p1, ui.weight().apply { marginEnd = ui.dp(5) })
-        names.addView(p2, ui.weight().apply { marginStart = ui.dp(5) })
-        col.addView(names, ui.lpMatch(bottom = 10))
-        col.addView(box)
-        render()
-    }
-
     override fun onHide() {
         Prefs.setStr(ctx, "p1", p1.text.toString()); Prefs.setStr(ctx, "p2", p2.text.toString())
     }
@@ -369,4 +355,20 @@ class GamesPage(private val ui: Ui) : Page {
         box.addView(t)
         refresh()
     }
+
+    // Erst ganz am Ende: alle Felder (Spielstände) sind jetzt angelegt
+    init {
+        col.addView(ui.chips(listOf("Schach", "Würfel-Risiko", "Höher / Tiefer"), game) {
+            game = it; Prefs.setInt(ctx, "game_sel", it); render()
+        }, ui.lpMatch(bottom = 10))
+        p1 = ui.input("Spieler 1").apply { setText(Prefs.str(ctx, "p1", Prefs.profile(ctx, "name").ifBlank { "" })) }
+        p2 = ui.input("Spieler 2").apply { setText(Prefs.str(ctx, "p2", "")) }
+        val names = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        names.addView(p1, ui.weight().apply { marginEnd = ui.dp(5) })
+        names.addView(p2, ui.weight().apply { marginStart = ui.dp(5) })
+        col.addView(names, ui.lpMatch(bottom = 10))
+        col.addView(box)
+        render()
+    }
+
 }

@@ -29,6 +29,12 @@ class UiSmokeTest {
         pages.forEach { it.onShow(); it.onHide() }
     }
 
+    @Test fun everyGameAndToolOpens() {
+        for (i in 0..2) { Prefs.setInt(ctx, "game_sel", i); GamesPage(Ui(ctx)).onShow() }
+        for (i in 0..3) { Prefs.setInt(ctx, "strat_tool", i); StrategyPage(Ui(ctx)).onShow() }
+        for (i in 0..2) { Prefs.setInt(ctx, "logic_mode", i); LogicPage(Ui(ctx)).onShow() }
+    }
+
     @Test fun panelOpensAndCloses() {
         val wm = ctx.getSystemService(WindowManager::class.java)
         val p = DashboardPanel(ctx, wm)
