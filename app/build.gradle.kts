@@ -15,6 +15,15 @@ android {
         versionName = "1.0"
     }
 
+    // fester Schlüssel, damit Updates sich über die alte Version installieren lassen
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes {
         release { isMinifyEnabled = false }
     }
