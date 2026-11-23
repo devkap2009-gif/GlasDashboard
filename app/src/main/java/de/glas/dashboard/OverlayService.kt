@@ -141,7 +141,7 @@ class OverlayService : Service() {
             val handle = View(this).apply {
                 background = GradientDrawable().apply {
                     cornerRadius = dpf(3f)
-                    setColor(0x8CFFFFFF.toInt())
+                    setColor(0xB37FDBFF.toInt())
                 }
             }
             v.addView(handle, FrameLayout.LayoutParams(dp(56), dp(5), Gravity.CENTER))

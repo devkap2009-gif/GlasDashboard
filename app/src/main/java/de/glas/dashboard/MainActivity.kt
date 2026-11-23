@@ -26,11 +26,12 @@ import android.content.res.ColorStateList
 /** Einrichtung: Berechtigungen, Dienst an/aus, Wischzone einstellen. */
 class MainActivity : Activity() {
 
-    private val rose = 0xFFFF8FA3.toInt()
+    private val rose = Holo.ICE
     private lateinit var status: TextView
     private lateinit var btnOverlay: TextView
     private lateinit var btnNotif: TextView
     private lateinit var btnBattery: TextView
+    private lateinit var btnListener: TextView
     private lateinit var btnService: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,7 +42,7 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(28), dp(22), dp(28))
         }
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(0xFF1A0F1F.toInt())
+            setBackgroundColor(Holo.NAVY)
             addView(col)
             @Suppress("DEPRECATION")
             setOnApplyWindowInsetsListener { v, insets ->
@@ -50,7 +51,7 @@ class MainActivity : Activity() {
             }
         }
 
-        col.addView(text("Glas-Dashboard", 34f, Typeface.create("sans-serif-light", Typeface.NORMAL)))
+        col.addView(text("Glas-Dashboard", 34f, Holo.light).apply { setShadowLayer(dpf(14f), 0f, 0f, Holo.ICE) })
         col.addView(text("Ein transparentes Panel, das über allen Apps liegt. Zwei Finger oben am Rand nach unten ziehen – schon ist es da.", 16f).apply {
             alpha = 0.8f; setPadding(0, dp(6), 0, dp(18))
         })
@@ -69,6 +70,9 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
             }
         }
+        btnListener = button("4 · Benachrichtigungen & Musik (Spotify) lesen") {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
         btnService = button("Dienst starten") {
             if (OverlayService.running) OverlayService.stop(this) else if (Settings.canDrawOverlays(this)) OverlayService.start(this)
             col.postDelayed({ refresh() }, 300)
@@ -76,7 +80,7 @@ class MainActivity : Activity() {
         val btnTest = button("Dashboard jetzt öffnen") {
             if (Settings.canDrawOverlays(this)) OverlayService.start(this, OverlayService.ACTION_OPEN)
         }
-        listOf(btnOverlay, btnNotif, btnBattery, btnService, btnTest).forEach { col.addView(it, lp(bottom = 10)) }
+        listOf(btnOverlay, btnNotif, btnBattery, btnListener, btnService, btnTest).forEach { col.addView(it, lp(bottom = 10)) }
 
         // Einstellungen der Wischzone
         col.addView(text("Höhe der Wischzone oben", 15f).apply { setPadding(0, dp(18), 0, 0) })
@@ -132,6 +136,7 @@ class MainActivity : Activity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         val battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         mark(btnOverlay, overlay); mark(btnNotif, notif); mark(btnBattery, battery)
+        mark(btnListener, NotifListener.isEnabled(this))
 
         val running = OverlayService.running || (overlay && Prefs.enabled(this))
         btnService.text = if (running) "Dienst beenden" else "Dienst starten"
@@ -142,7 +147,7 @@ class MainActivity : Activity() {
         }
         status.background = GradientDrawable().apply {
             cornerRadius = dpf(14f)
-            setColor(if (running) 0x33FF8FA3 else 0x1FFFFFFF)
+            setColor(if (running) 0x337FDBFF else 0x1FFFFFFF)
         }
     }
 
@@ -166,9 +171,7 @@ class MainActivity : Activity() {
         gravity = Gravity.CENTER_VERTICAL
         minHeight = dp(52)
         setPadding(dp(18), dp(10), dp(18), dp(10))
-        background = GradientDrawable().apply {
-            cornerRadius = dpf(16f); setColor(0x1FFFFFFF); setStroke(dp(1), 0x3DFFFFFF)
-        }
+        background = CutDrawable(dpf(14f), Holo.PANEL, Holo.LINE, dpf(1f))
         setOnClickListener { onClick() }
     }
 
