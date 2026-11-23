@@ -100,7 +100,17 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
 
     // Widgets, die aktualisiert werden
     private lateinit var batteryText: TextView
-    private lateinit var batteryBar: ProgressBar
+    private lateinit var quoteText: TextView
+    private lateinit var quoteSrc: TextView
+    private lateinit var conceptTerm: TextView
+    private lateinit var conceptText: TextView
+    private lateinit var scienceText: TextView
+    private lateinit var questionText: TextView
+    private lateinit var answerInput: EditText
+    private lateinit var journalInfo: TextView
+    private lateinit var journalBox: LinearLayout
+    private lateinit var focusInfo: TextView
+    private var journalOpen = false
     private lateinit var timerText: TextView
     private lateinit var timerBtn: TextView
     private lateinit var todoBox: LinearLayout
@@ -117,8 +127,8 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     private val toggleViews = mutableListOf<Triple<FrameLayout, ImageView, () -> Boolean>>()
 
     // ---------- Timer ----------
-    private val presets = intArrayOf(1, 5, 10, 25)
-    private var presetIdx = 1
+    private val presets = intArrayOf(25, 50, 90, 5)
+    private var presetIdx = 0
     private var timerLeft = presets[presetIdx] * 60
     private var timerRunning = false
     private val tick = object : Runnable {
@@ -370,7 +380,9 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         // Kopfzeile
         val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         head.addView(View(ctx).apply { setBackgroundColor(Holo.ICE) }, LinearLayout.LayoutParams(ctx.dp(8), ctx.dp(8)).apply { marginEnd = ctx.dp(8) })
-        head.addView(label("Kommandozentrale · online"))
+        head.addView(label("Kommandozentrale · online"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        batteryText = label("–")
+        head.addView(batteryText)
         sheet.addView(head)
 
         val clock = TextClock(ctx).apply {
@@ -395,10 +407,14 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         sheet.addView(View(ctx).apply { setBackgroundColor(Holo.LINE) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ctx.dp(1)).apply { bottomMargin = ctx.dp(14) })
 
+        sheet.addView(quoteTile())
+        sheet.addView(conceptTile())
+        sheet.addView(scienceTile())
+        sheet.addView(questionTile())
+        sheet.addView(timerTile())
         sheet.addView(mediaTile())
         sheet.addView(notifTileView())
         sheet.addView(tile().apply { addView(toggleRow()) })
-        sheet.addView(row(batteryTile(), timerTile()))
         sheet.addView(todoTile())
         sheet.addView(noteTile())
 
@@ -440,6 +456,134 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
             }
         }
         close()
+    }
+
+    // ---------- Denken: Zitat, Begriff, Wissen, Denkfrage ----------
+
+    private fun daily(key: String, size: Int): Int =
+        (((today() + Prefs.offset(ctx, key)) % size + size) % size).toInt()
+
+    private fun next(key: String) = Prefs.setOffset(ctx, key, Prefs.offset(ctx, key) + 1)
+
+    /** Überschrift mit kleinem „Weiter“-Knopf rechts. */
+    private fun headRow(title: String, btn: String, onClick: () -> Unit) = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(label(title), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(pill(btn, onClick))
+    }
+
+    private fun quoteTile() = tile().apply {
+        addView(headRow("Gedanke des Tages", "Weiter →") { next("quote"); renderQuote() })
+        quoteText = TextView(ctx).apply {
+            setTextColor(Holo.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            typeface = android.graphics.Typeface.create("serif", android.graphics.Typeface.ITALIC)
+            setLineSpacing(0f, 1.15f)
+            setShadowLayer(ctx.dpf(8f), 0f, 0f, Holo.ICE_DIM)
+            setPadding(0, ctx.dp(12), 0, ctx.dp(8))
+        }
+        quoteSrc = small("").apply { setTextColor(Holo.ICE_DIM) }
+        addView(quoteText); addView(quoteSrc)
+        renderQuote()
+    }
+
+    private fun renderQuote() {
+        val (q, src) = Content.quotes[daily("quote", Content.quotes.size)]
+        quoteText.text = "„$q“"
+        quoteSrc.text = "— $src"
+    }
+
+    private fun conceptTile() = tile().apply {
+        addView(headRow("Begriff des Tages", "Weiter →") { next("concept"); renderConcept() })
+        conceptTerm = TextView(ctx).apply {
+            setTextColor(Holo.ICE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+            typeface = Holo.light
+            setShadowLayer(ctx.dpf(10f), 0f, 0f, Holo.ICE_DIM)
+            setPadding(0, ctx.dp(10), 0, ctx.dp(4))
+        }
+        conceptText = TextView(ctx).apply {
+            setTextColor(Holo.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); setLineSpacing(0f, 1.2f)
+        }
+        addView(conceptTerm); addView(conceptText)
+        renderConcept()
+    }
+
+    private fun renderConcept() {
+        val (term, text) = Content.concepts[daily("concept", Content.concepts.size)]
+        conceptTerm.text = term
+        conceptText.text = text
+    }
+
+    private fun scienceTile() = tile().apply {
+        addView(headRow("Kosmos & Wissen", "Weiter →") { next("science"); renderScience() })
+        scienceText = TextView(ctx).apply {
+            setTextColor(Holo.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); setLineSpacing(0f, 1.2f)
+            setPadding(0, ctx.dp(10), 0, 0)
+        }
+        addView(scienceText)
+        renderScience()
+    }
+
+    private fun renderScience() {
+        scienceText.text = Content.science[daily("science", Content.science.size)]
+    }
+
+    private fun questionTile() = tile().apply {
+        addView(headRow("Denkfrage", "Andere") { next("question"); renderQuestion() })
+        questionText = TextView(ctx).apply {
+            setTextColor(Holo.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            typeface = Holo.light
+            setLineSpacing(0f, 1.15f)
+            setPadding(0, ctx.dp(10), 0, ctx.dp(10))
+        }
+        addView(questionText)
+        answerInput = input("Deine Gedanken dazu …", true)
+        addView(answerInput)
+        val btns = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        btns.addView(pill("Ins Gedankenbuch") {
+            val a = answerInput.text.toString().trim()
+            if (a.isNotEmpty()) {
+                Prefs.addJournal(ctx, questionText.text.toString(), a)
+                answerInput.setText("")
+                hideKeyboard()
+                renderJournal()
+            }
+        })
+        journalInfo = small("").apply {
+            setPadding(ctx.dp(14), 0, 0, 0)
+            setOnClickListener { journalOpen = !journalOpen; renderJournal() }
+        }
+        btns.addView(journalInfo, LinearLayout.LayoutParams(0, ctx.dp(44), 1f))
+        journalInfo.gravity = Gravity.CENTER_VERTICAL
+        addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ctx.dp(10) })
+        journalBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        addView(journalBox)
+        renderQuestion()
+        renderJournal()
+    }
+
+    private fun renderQuestion() {
+        questionText.text = Content.questions[daily("question", Content.questions.size)]
+    }
+
+    private fun renderJournal() {
+        val list = Prefs.journal(ctx)
+        journalInfo.text = if (list.isEmpty()) "Gedankenbuch ist noch leer"
+            else (if (journalOpen) "▾ " else "▸ ") + "Gedankenbuch (${list.size})"
+        journalBox.removeAllViews()
+        if (!journalOpen) return
+        val fmt = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM)
+        list.take(10).forEach { (t, q, a) ->
+            journalBox.addView(View(ctx).apply { setBackgroundColor(0x267FDBFF) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ctx.dp(1)).apply { topMargin = ctx.dp(10) })
+            journalBox.addView(label(fmt.format(java.util.Date(t))).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f); setPadding(0, ctx.dp(10), 0, ctx.dp(2)) })
+            journalBox.addView(small(q).apply { setTextColor(Holo.ICE_DIM) })
+            journalBox.addView(TextView(ctx).apply {
+                text = a; setTextColor(Holo.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); setPadding(0, ctx.dp(4), 0, 0)
+            })
+        }
     }
 
     // ---------- Musik (Spotify & Co.) ----------
@@ -689,15 +833,6 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
 
     // ---------- Akku ----------
 
-    private fun batteryTile() = tile().apply {
-        (layoutParams as LinearLayout.LayoutParams).bottomMargin = 0
-        addView(label("Energie"))
-        batteryText = big("–")
-        addView(batteryText)
-        batteryBar = bar().apply { max = 100 }
-        addView(batteryBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ctx.dp(6)).apply { topMargin = ctx.dp(10) })
-    }
-
     private fun showBattery(i: Intent) {
         val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
@@ -705,16 +840,14 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         val pct = level * 100 / scale.coerceAtLeast(1)
         val status = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
-        batteryText.text = "$pct %" + if (charging) " ⚡" else ""
-        batteryBar.progress = pct
+        batteryText.text = (if (charging) "⚡ " else "") + "$pct %"
     }
 
     // ---------- Timer ----------
 
     private fun timerTile() = tile().apply {
-        (layoutParams as LinearLayout.LayoutParams).bottomMargin = 0
-        addView(label("Timer"))
-        timerText = big("05:00").apply {
+        addView(label("Fokus · Tiefe Arbeit"))
+        timerText = big("25:00").apply {
             setOnClickListener {
                 if (!timerRunning) {
                     presetIdx = (presetIdx + 1) % presets.size
@@ -729,7 +862,11 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         btns.addView(timerBtn)
         btns.addView(pill("↺") { resetTimer() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = ctx.dp(8) })
         addView(btns, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ctx.dp(8) })
+        focusInfo = small("")
+        addView(focusInfo.apply { setPadding(0, ctx.dp(10), 0, 0) })
     }
+
+    private fun today() = java.time.LocalDate.now().toEpochDay()
 
     private fun toggleTimer() {
         if (timerRunning) {
@@ -753,11 +890,14 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         timerBtn.text = if (timerRunning) "PAUSE" else "START"
         timerBtn.setTextColor(if (timerRunning) Holo.NAVY else Holo.WHITE)
         timerBtn.background = if (timerRunning) cut(Holo.ICE, Holo.ICE, 10f) else cut(Holo.PANEL_DEEP, Holo.LINE, 10f)
+        val n = Prefs.focusCount(ctx, today())
+        focusInfo.text = "Zeit antippen: 25 / 50 / 90 / 5 Min. · Heute: $n " + if (n == 1) "Sitzung" else "Sitzungen"
     }
 
     private fun timerDone() {
         timerRunning = false
         timerLeft = 0
+        if (presets[presetIdx] >= 25) Prefs.addFocus(ctx, today())
         updateTimer()
         val vib: Vibrator? = if (Build.VERSION.SDK_INT >= 31)
             ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
@@ -768,7 +908,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
                 2,
                 Notification.Builder(ctx, OverlayService.CHANNEL_TIMER)
                     .setSmallIcon(R.drawable.ic_stat)
-                    .setContentTitle("Timer fertig")
+                    .setContentTitle("Fokus-Sitzung beendet")
                     .setContentText("${presets[presetIdx]} Minuten sind um.")
                     .setAutoCancel(true)
                     .build()
@@ -779,7 +919,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     // ---------- Aufgaben ----------
 
     private fun todoTile() = tile().apply {
-        addView(label("Aufgaben").apply { setPadding(0, 0, 0, ctx.dp(8)) })
+        addView(label("Lernen & Aufgaben").apply { setPadding(0, 0, 0, ctx.dp(8)) })
         val field = input("Neue Aufgabe …", false)
         field.setOnEditorActionListener { v, action, _ ->
             if (action == EditorInfo.IME_ACTION_DONE) {
@@ -842,7 +982,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     // ---------- Notiz ----------
 
     private fun noteTile() = tile().apply {
-        addView(label("Notiz").apply { setPadding(0, 0, 0, ctx.dp(8)) })
+        addView(label("Gedankennotiz").apply { setPadding(0, 0, 0, ctx.dp(8)) })
         val note = input("Schnell etwas aufschreiben …", true)
         note.setText(Prefs.note(ctx))
         note.addTextChangedListener(object : TextWatcher {

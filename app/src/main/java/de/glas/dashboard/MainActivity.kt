@@ -18,6 +18,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
@@ -82,8 +84,21 @@ class MainActivity : Activity() {
         }
         listOf(btnOverlay, btnNotif, btnBattery, btnListener, btnService, btnTest).forEach { col.addView(it, lp(bottom = 10)) }
 
-        // Einstellungen der Wischzone
-        col.addView(text("Höhe der Wischzone oben", 15f).apply { setPadding(0, dp(18), 0, 0) })
+        // Wie und wo öffnen
+        col.addView(text("Öffnen durch", 15f).apply { setPadding(0, dp(18), 0, dp(4)) })
+        col.addView(radios(listOf("Gedrückt halten", "Zwei-Finger-Wisch nach unten", "Beides"),
+            when (Prefs.openMode(this)) { 1 -> 0; 0 -> 1; else -> 2 }) { i ->
+            Prefs.setOpenMode(this, when (i) { 0 -> 1; 1 -> 0; else -> 2 })
+            refreshStrip()
+        })
+        col.addView(text("Position der Zone", 15f).apply { setPadding(0, dp(14), 0, dp(4)) })
+        col.addView(radios(listOf("Oben (unter der Statusleiste)", "Rechter Rand", "Linker Rand"), Prefs.position(this)) { i ->
+            Prefs.setPosition(this, i)
+            refreshStrip()
+        })
+
+        // Einstellungen der Zone
+        col.addView(text("Dicke der Zone", 15f).apply { setPadding(0, dp(18), 0, 0) })
         val hVal = text("${Prefs.stripHeight(this)} dp", 13f).apply { alpha = 0.7f }
         col.addView(hVal)
         col.addView(SeekBar(this).apply {
@@ -96,7 +111,7 @@ class MainActivity : Activity() {
                 override fun onStartTrackingTouch(s: SeekBar) {}
                 override fun onStopTrackingTouch(s: SeekBar) {
                     Prefs.setStripHeight(this@MainActivity, s.progress + 16)
-                    if (OverlayService.running) OverlayService.start(this@MainActivity, OverlayService.ACTION_REFRESH)
+                    refreshStrip()
                 }
             })
         }, lp(bottom = 8))
@@ -107,13 +122,14 @@ class MainActivity : Activity() {
             isChecked = Prefs.showHandle(this@MainActivity)
             setOnCheckedChangeListener { _, c ->
                 Prefs.setShowHandle(this@MainActivity, c)
-                if (OverlayService.running) OverlayService.start(this@MainActivity, OverlayService.ACTION_REFRESH)
+                refreshStrip()
             }
         }, lp(bottom = 18))
 
         col.addView(text(
             "So öffnest du das Dashboard:\n" +
-            "• Zwei Finger direkt unter der Statusleiste ansetzen und nach unten ziehen.\n" +
+            "• Auf die Zone (den kleinen Griff) tippen und kurz gedrückt halten, bis es vibriert.\n" +
+            "• Oder zwei Finger in der Zone ansetzen und nach unten ziehen (Position „Oben“).\n" +
             "• Oder: Schnelleinstellungen bearbeiten (Stift-Symbol) und die Kachel „Dashboard“ hinzufügen.\n" +
             "• Oder: auf die Benachrichtigung „Dashboard bereit“ tippen.\n\n" +
             "Schließen: zwei Finger nach oben, daneben tippen oder Zurück.\n\n" +
@@ -148,6 +164,26 @@ class MainActivity : Activity() {
         status.background = GradientDrawable().apply {
             cornerRadius = dpf(14f)
             setColor(if (running) 0x337FDBFF else 0x1FFFFFFF)
+        }
+    }
+
+    private fun refreshStrip() {
+        if (OverlayService.running) OverlayService.start(this, OverlayService.ACTION_REFRESH)
+    }
+
+    private fun radios(options: List<String>, selected: Int, onPick: (Int) -> Unit) = RadioGroup(this).apply {
+        orientation = RadioGroup.VERTICAL
+        options.forEachIndexed { i, o ->
+            addView(RadioButton(this@MainActivity).apply {
+                id = View.generateViewId()
+                text = o
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                buttonTintList = ColorStateList.valueOf(rose)
+                minHeight = dp(44)
+                isChecked = i == selected
+                setOnCheckedChangeListener { _, checked -> if (checked) onPick(i) }
+            })
         }
     }
 

@@ -20,6 +20,42 @@ object Prefs {
     fun showHandle(c: Context) = sp(c).getBoolean("show_handle", true)
     fun setShowHandle(c: Context, v: Boolean) = sp(c).edit().putBoolean("show_handle", v).apply()
 
+    /** 0 = Zwei-Finger-Wisch, 1 = Gedrückt halten, 2 = beides */
+    fun openMode(c: Context) = sp(c).getInt("open_mode", 2)
+    fun setOpenMode(c: Context, v: Int) = sp(c).edit().putInt("open_mode", v).apply()
+
+    /** 0 = oben, 1 = rechter Rand, 2 = linker Rand */
+    fun position(c: Context) = sp(c).getInt("position", 0)
+    fun setPosition(c: Context, v: Int) = sp(c).edit().putInt("position", v).apply()
+
+    /** Verschiebung, damit man mit „Weiter“ durch Zitate/Begriffe blättern kann */
+    fun offset(c: Context, key: String) = sp(c).getInt("off_$key", 0)
+    fun setOffset(c: Context, key: String, v: Int) = sp(c).edit().putInt("off_$key", v).apply()
+
+    /** Fokus-Sitzungen pro Tag (Schlüssel = Tagesnummer) */
+    fun focusCount(c: Context, day: Long) = sp(c).getInt("focus_$day", 0)
+    fun addFocus(c: Context, day: Long) = sp(c).edit().putInt("focus_$day", focusCount(c, day) + 1).apply()
+
+    /** Gedankenbuch: Antworten auf die Denkfrage */
+    fun journal(c: Context): MutableList<Triple<Long, String, String>> {
+        val raw = sp(c).getString("journal", null) ?: return mutableListOf()
+        return try {
+            val a = JSONArray(raw)
+            MutableList(a.length()) { i ->
+                val o = a.getJSONObject(i)
+                Triple(o.optLong("t"), o.optString("q"), o.optString("a"))
+            }
+        } catch (e: Exception) { mutableListOf() }
+    }
+
+    fun addJournal(c: Context, q: String, answer: String) {
+        val list = journal(c)
+        list.add(0, Triple(System.currentTimeMillis(), q, answer))
+        val a = JSONArray()
+        list.take(200).forEach { a.put(JSONObject().put("t", it.first).put("q", it.second).put("a", it.third)) }
+        sp(c).edit().putString("journal", a.toString()).apply()
+    }
+
     fun note(c: Context) = sp(c).getString("note", "") ?: ""
     fun setNote(c: Context, v: String) = sp(c).edit().putString("note", v).apply()
 

@@ -15,10 +15,12 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import kotlin.math.abs
 
 /**
  * Läuft dauerhaft im Hintergrund (Vordergrunddienst mit Benachrichtigung).
@@ -109,7 +111,7 @@ class OverlayService : Service() {
         val n: Notification = Notification.Builder(this, CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Dashboard bereit")
-            .setContentText("Mit zwei Fingern oben am Rand nach unten wischen")
+            .setContentText("Zone antippen und halten – oder mit zwei Fingern nach unten wischen")
             .setContentIntent(openPi)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null as Icon?, "Beenden", stopPi).build())
@@ -124,16 +126,24 @@ class OverlayService : Service() {
     // ---------- Wischzone ----------
 
     private fun addStrip() {
+        val pos = Prefs.position(this)
+        val mode = Prefs.openMode(this)
+        val thick = dp(Prefs.stripHeight(this))
+        val top = pos == 0
         val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            dp(Prefs.stripHeight(this)),
+            if (top) WindowManager.LayoutParams.MATCH_PARENT else thick,
+            if (top) thick else dp(200),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            y = statusBarHeight()   // direkt unter der Statusleiste
+            gravity = when (pos) {
+                0 -> Gravity.TOP or Gravity.START
+                1 -> Gravity.END or Gravity.CENTER_VERTICAL
+                else -> Gravity.START or Gravity.CENTER_VERTICAL
+            }
+            if (pos == 0) y = statusBarHeight()   // direkt unter der Statusleiste
         }
 
         val v = FrameLayout(this)
@@ -144,36 +154,60 @@ class OverlayService : Service() {
                     setColor(0xB37FDBFF.toInt())
                 }
             }
-            v.addView(handle, FrameLayout.LayoutParams(dp(56), dp(5), Gravity.CENTER))
+            v.addView(handle, if (top) FrameLayout.LayoutParams(dp(56), dp(5), Gravity.CENTER)
+                              else FrameLayout.LayoutParams(dp(5), dp(56), Gravity.CENTER))
         }
 
+        val allowSwipe = mode != 1
+        val allowHold = mode != 0
+        val slop = dpf(12f)
         var startY = 0f
         var dy = 0f
+        var downX = 0f
+        var downY = 0f
         var tracking = false
         var dragging = false
+        var held = false
         val screenH = resources.displayMetrics.heightPixels.toFloat()
+        val holdRunnable = Runnable {
+            held = true
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            panel().open()
+        }
 
         v.setOnTouchListener { _, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { tracking = false; dragging = false }
-                MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2) {
-                    startY = (e.getY(0) + e.getY(1)) / 2f
-                    dy = 0f
-                    tracking = true
+                MotionEvent.ACTION_DOWN -> {
+                    tracking = false; dragging = false; held = false
+                    downX = e.rawX; downY = e.rawY
+                    if (allowHold) v.postDelayed(holdRunnable, 450)
                 }
-                MotionEvent.ACTION_MOVE -> if (tracking && e.pointerCount >= 2) {
-                    dy = (e.getY(0) + e.getY(1)) / 2f - startY
-                    if (dy > dpf(8f) || dragging) {
-                        dragging = true
-                        panel().drag(dy / (screenH * 0.45f))
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    v.removeCallbacks(holdRunnable)
+                    if (allowSwipe && e.pointerCount == 2 && !held) {
+                        startY = (e.getY(0) + e.getY(1)) / 2f
+                        dy = 0f
+                        tracking = true
                     }
                 }
-                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                MotionEvent.ACTION_MOVE -> {
+                    if (abs(e.rawX - downX) > slop || abs(e.rawY - downY) > slop) v.removeCallbacks(holdRunnable)
+                    if (tracking && e.pointerCount >= 2) {
+                        dy = (e.getY(0) + e.getY(1)) / 2f - startY
+                        if (dy > dpf(8f) || dragging) {
+                            dragging = true
+                            panel().drag(dy / (screenH * 0.45f))
+                        }
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.removeCallbacks(holdRunnable)
                     if (tracking) {
                         tracking = false
                         if (dragging) panel().settle(dy > dpf(70f))
                         dragging = false
                     }
+                }
             }
             true
         }
