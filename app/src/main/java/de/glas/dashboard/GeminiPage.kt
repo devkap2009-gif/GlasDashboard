@@ -15,7 +15,7 @@ import android.widget.TextView
 /** Gemini-Chat direkt im Overlay – ohne die Gemini-App. */
 class GeminiPage(private val ui: Ui, private val close: () -> Unit = {}) : Page {
     override val key = "gemini"
-    override val title = "Gemini"
+    override val title = "KI"
 
     private val ctx = ui.ctx
     private val main = Handler(Looper.getMainLooper())
@@ -97,11 +97,12 @@ class GeminiPage(private val ui: Ui, private val close: () -> Unit = {}) : Page 
         return wrap
     }
 
-    /** Das echte Gemini-Overlay öffnen – ohne API-Schlüssel. */
+    /** Claude (Standard) oder Gemini – ohne API-Schlüssel. */
     private fun overlayTile() = ui.tile().apply {
-        addView(ui.label("Gemini-Overlay"))
-        addView(ui.small("Öffnet das echte Gemini-Fenster über deinem Bildschirm – kein API-Schlüssel nötig."), ui.lpMatch(top = 4))
-        val q = ui.input("Was willst du Gemini fragen?", lines = 2).apply { setText(askText) }
+        val prov = AiBridge.provider(ctx)
+        addView(ui.label("Frag deine KI"))
+        addView(ui.chips(listOf("Claude", "Gemini"), prov) { AiBridge.setProvider(ctx, it); render() }, ui.lpMatch(top = 8))
+        val q = ui.input("Was willst du ${AiBridge.name(ctx)} fragen?", lines = 2).apply { setText(askText) }
         q.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -113,10 +114,15 @@ class GeminiPage(private val ui: Ui, private val close: () -> Unit = {}) : Page 
         mapChip = ui.pill("+ Implikations-Karte", withMap) { withMap = !withMap; ui.setActive(mapChip, withMap) }
         noteChip = ui.pill("+ Letzte Notiz", withNote) { withNote = !withNote; ui.setActive(noteChip, withNote) }
         addView(ui.rowOf(mapChip, noteChip), ui.lpMatch(top = 8))
-        addView(ui.pill("✦ Im Gemini-Overlay fragen", true) { openOverlay(buildQuestion()) }, ui.lpWrap(top = 12))
-        addView(ui.pill("Gemini über diesem Bildschirm") { openOverlay(null) }, ui.lpWrap(top = 8))
-        addView(ui.small("So geht's: Deine Frage liegt danach in der Zwischenablage. Im Gemini-Fenster ins Eingabefeld tippen → lange drücken → Einfügen. " +
-            "„Gemini über diesem Bildschirm“ öffnet Gemini ohne Text – dort kannst du nach dem fragen, was gerade zu sehen ist."), ui.lpMatch(top = 10))
+        addView(ui.pill("✦ ${AiBridge.name(ctx)} fragen", true) { AiBridge.ask(ctx, buildQuestion(), close) }, ui.lpWrap(top = 12))
+        addView(ui.pill("Assistent-Overlay über dem Bildschirm") { AiBridge.overlay(ctx, buildQuestion().ifBlank { null }, close) }, ui.lpWrap(top = 8))
+        if (prov == 0) {
+            if (!AiBridge.claudeInstalled(ctx)) addView(ui.small("Die Claude-App scheint nicht installiert zu sein – der Knopf öffnet dann den Play Store."), ui.lpMatch(top = 10))
+            addView(ui.small("„Claude fragen“ öffnet einen neuen Claude-Chat mit deiner Frage. Für ein echtes Overlay über jeder App: Claude als Standard-Assistent festlegen – dann öffnet „Assistent-Overlay“ Claude statt Gemini (auch per langem Druck auf die Ein-Taste)."), ui.lpMatch(top = 10))
+            addView(ui.pill("Standard-Assistent ändern") { AiBridge.openAssistantSettings(ctx, close) }, ui.lpWrap(top = 8))
+        } else {
+            addView(ui.small("Die Frage liegt danach in der Zwischenablage: im Gemini-Feld lange drücken → Einfügen."), ui.lpMatch(top = 10))
+        }
     }
 
     private fun buildQuestion(): String {
@@ -143,7 +149,7 @@ class GeminiPage(private val ui: Ui, private val close: () -> Unit = {}) : Page 
         val hasKey = Gemini.key(ctx).isNotBlank()
         bar.visibility = if (hasKey) View.VISIBLE else View.GONE
         if (!hasKey && !showSettings) {
-            list.addView(ui.small("Optional: Mit einem API-Schlüssel kann Gemini auch direkt hier im Panel antworten ▸").apply {
+            list.addView(ui.small("Optional: Mit einem Gemini-API-Schlüssel kann Gemini auch direkt hier im Panel antworten ▸").apply {
                 setTextColor(Holo.ICE_DIM); setPadding(0, ui.dp(6), 0, ui.dp(6)); setOnClickListener { showSettings = true; render() }
             })
             return
@@ -152,7 +158,7 @@ class GeminiPage(private val ui: Ui, private val close: () -> Unit = {}) : Page 
         val h = Gemini.history(ctx)
         if (h.isEmpty()) {
             list.addView(ui.tile().apply {
-                addView(ui.label("Chat im Panel"))
+                addView(ui.label("Gemini-Chat im Panel"))
                 addView(ui.small("Stell eine Frage – zum Beispiel zu einem Logik-Problem, einem Philosophen oder deiner Strategie. Mit „Karte anhängen“ bekommt Gemini deine Implikations-Karte mit."), ui.lpMatch(top = 6))
                 listOf("Erkläre Gödels Unvollständigkeitssatz in 5 Sätzen.", "Was ist der Unterschied zwischen S4 und S5?", "Prüfe meine Implikations-Karte auf Denkfehler.").forEach { s ->
                     addView(ui.small("› $s").apply { setTextColor(Holo.ICE); setPadding(0, ui.dp(10), 0, ui.dp(4)); setOnClickListener { input.setText(s) } })

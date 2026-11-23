@@ -343,7 +343,7 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
             // ohne Schlüssel: im echten Gemini-Overlay fragen
             val q = "Ereignis: „${n.text}“. Kontext – meine Implikations-Karte:\n${map.describe()}\n\n" +
                 "Nenne 3 bis 4 realistische direkte Folgen dieses Ereignisses mit Wahrscheinlichkeit (in %) und ob sie gut oder schlecht wären."
-            close(); android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AssistActivity.open(ctx, q) }, 300)
+            AiBridge.ask(ctx, q, close)
             return
         }
         status.text = "Gemini denkt nach …"
@@ -429,12 +429,10 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
     // ---------- Gemini ----------
 
     private fun geminiTile() = ui.tile().apply {
-        addView(ui.label("Mit Gemini weiterdenken"))
-        addView(ui.small("Öffnet das Gemini-Overlay über dem Bildschirm. Deine Karte samt Analyse-Frage liegt in der Zwischenablage – im Gemini-Feld lange drücken → Einfügen."), ui.lpMatch(top = 4))
+        addView(ui.label("Mit KI weiterdenken"))
+        addView(ui.small("Gibt deine Karte samt Analyse-Frage an ${AiBridge.name(ctx)} (umstellbar im Bereich „KI“)."), ui.lpMatch(top = 4))
         addView(ui.rowOf(
-            ui.pill("✦ Im Gemini-Overlay besprechen", true) {
-                close(); android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AssistActivity.open(ctx, geminiPrompt()) }, 300)
-            },
+            ui.pill("✦ Mit ${AiBridge.name(ctx)} besprechen", true) { AiBridge.ask(ctx, geminiPrompt(), close) },
             ui.pill("Teilen …") { sendToGemini() }
         ), ui.lpMatch(top = 10))
     }
