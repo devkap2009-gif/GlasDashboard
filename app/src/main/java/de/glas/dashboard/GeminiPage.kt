@@ -13,7 +13,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 /** Gemini-Chat direkt im Overlay – ohne die Gemini-App. */
-class GeminiPage(private val ui: Ui) : Page {
+class GeminiPage(private val ui: Ui, private val close: () -> Unit = {}) : Page {
     override val key = "gemini"
     override val title = "Gemini"
 
@@ -30,6 +30,10 @@ class GeminiPage(private val ui: Ui) : Page {
     private var dots = 0
     private var attachMap = false
     private var showSettings = false
+    private lateinit var bar: View
+    private var askText = ""
+    private var withMap = false
+    private var withNote = false
 
     private val system = "Du bist ein scharfsinniger Denkpartner in einem Dashboard für Philosophie, Logik, Wissenschaft und Strategie. " +
         "Antworte auf Deutsch, präzise und ohne Floskeln. Nutze, wo es hilft, kurze Listen. " +
@@ -46,7 +50,8 @@ class GeminiPage(private val ui: Ui) : Page {
     init {
         scroll.addView(list, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         rootView.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        rootView.addView(inputBar())
+        bar = inputBar()
+        rootView.addView(bar)
         render()
     }
 
@@ -92,13 +97,62 @@ class GeminiPage(private val ui: Ui) : Page {
         return wrap
     }
 
+    /** Das echte Gemini-Overlay öffnen – ohne API-Schlüssel. */
+    private fun overlayTile() = ui.tile().apply {
+        addView(ui.label("Gemini-Overlay"))
+        addView(ui.small("Öffnet das echte Gemini-Fenster über deinem Bildschirm – kein API-Schlüssel nötig."), ui.lpMatch(top = 4))
+        val q = ui.input("Was willst du Gemini fragen?", lines = 2).apply { setText(askText) }
+        q.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { askText = s?.toString() ?: "" }
+        })
+        addView(q, ui.lpMatch(top = 10))
+        lateinit var mapChip: TextView
+        lateinit var noteChip: TextView
+        mapChip = ui.pill("+ Implikations-Karte", withMap) { withMap = !withMap; ui.setActive(mapChip, withMap) }
+        noteChip = ui.pill("+ Letzte Notiz", withNote) { withNote = !withNote; ui.setActive(noteChip, withNote) }
+        addView(ui.rowOf(mapChip, noteChip), ui.lpMatch(top = 8))
+        addView(ui.pill("✦ Im Gemini-Overlay fragen", true) { openOverlay(buildQuestion()) }, ui.lpWrap(top = 12))
+        addView(ui.pill("Gemini über diesem Bildschirm") { openOverlay(null) }, ui.lpWrap(top = 8))
+        addView(ui.small("So geht's: Deine Frage liegt danach in der Zwischenablage. Im Gemini-Fenster ins Eingabefeld tippen → lange drücken → Einfügen. " +
+            "„Gemini über diesem Bildschirm“ öffnet Gemini ohne Text – dort kannst du nach dem fragen, was gerade zu sehen ist."), ui.lpMatch(top = 10))
+    }
+
+    private fun buildQuestion(): String {
+        val sb = StringBuilder(askText.trim())
+        if (withMap) {
+            val m = MapModel()
+            runCatching { m.load(org.json.JSONObject(ctx.getSharedPreferences("strategy", 0).getString("map", "{}") ?: "{}")) }
+            sb.append("\n\n[Meine Implikations-Karte]\n").append(m.describe())
+        }
+        if (withNote) {
+            Prefs.notes(ctx).firstOrNull()?.let { n -> sb.append("\n\n[Notiz: ${n.title}]\n").append(n.body) }
+        }
+        return sb.toString().trim()
+    }
+
+    private fun openOverlay(text: String?) {
+        close()
+        main.postDelayed({ AssistActivity.open(ctx, text) }, 300)
+    }
+
     private fun render() {
         list.removeAllViews()
-        if (Gemini.key(ctx).isBlank() || showSettings) { list.addView(settings()); if (Gemini.key(ctx).isBlank()) return }
+        list.addView(overlayTile())
+        val hasKey = Gemini.key(ctx).isNotBlank()
+        bar.visibility = if (hasKey) View.VISIBLE else View.GONE
+        if (!hasKey && !showSettings) {
+            list.addView(ui.small("Optional: Mit einem API-Schlüssel kann Gemini auch direkt hier im Panel antworten ▸").apply {
+                setTextColor(Holo.ICE_DIM); setPadding(0, ui.dp(6), 0, ui.dp(6)); setOnClickListener { showSettings = true; render() }
+            })
+            return
+        }
+        if (!hasKey || showSettings) { list.addView(settings()); if (!hasKey) return }
         val h = Gemini.history(ctx)
         if (h.isEmpty()) {
             list.addView(ui.tile().apply {
-                addView(ui.label("Gemini im Overlay"))
+                addView(ui.label("Chat im Panel"))
                 addView(ui.small("Stell eine Frage – zum Beispiel zu einem Logik-Problem, einem Philosophen oder deiner Strategie. Mit „Karte anhängen“ bekommt Gemini deine Implikations-Karte mit."), ui.lpMatch(top = 6))
                 listOf("Erkläre Gödels Unvollständigkeitssatz in 5 Sätzen.", "Was ist der Unterschied zwischen S4 und S5?", "Prüfe meine Implikations-Karte auf Denkfehler.").forEach { s ->
                     addView(ui.small("› $s").apply { setTextColor(Holo.ICE); setPadding(0, ui.dp(10), 0, ui.dp(4)); setOnClickListener { input.setText(s) } })

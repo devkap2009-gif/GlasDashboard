@@ -47,6 +47,15 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
 
+        <!-- Öffnet das Gemini-Overlay (Standard-Assistent) über dem aktuellen Bildschirm -->
+        <activity
+            android:name=".AssistActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".OverlayService"
             android:exported="false"

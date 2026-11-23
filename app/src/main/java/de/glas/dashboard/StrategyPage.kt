@@ -338,8 +338,14 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
 
     /** Gemini schlägt direkte Folgen mit Wahrscheinlichkeit und Wert vor und hängt sie an. */
     private fun aiSuggest(id: Int, status: TextView) {
-        if (Gemini.key(ctx).isBlank()) { status.text = "Erst im Bereich „Gemini“ den API-Schlüssel eintragen."; return }
         val n = map.node(id) ?: return
+        if (Gemini.key(ctx).isBlank()) {
+            // ohne Schlüssel: im echten Gemini-Overlay fragen
+            val q = "Ereignis: „${n.text}“. Kontext – meine Implikations-Karte:\n${map.describe()}\n\n" +
+                "Nenne 3 bis 4 realistische direkte Folgen dieses Ereignisses mit Wahrscheinlichkeit (in %) und ob sie gut oder schlecht wären."
+            close(); android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AssistActivity.open(ctx, q) }, 300)
+            return
+        }
         status.text = "Gemini denkt nach …"
         val prompt = "Ereignis: „${n.text}“.\nKontext – meine bisherige Implikations-Karte:\n${map.describe()}\n\n" +
             "Nenne 3 bis 4 realistische, noch nicht enthaltene direkte Folgen dieses Ereignisses. " +
@@ -424,10 +430,12 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
 
     private fun geminiTile() = ui.tile().apply {
         addView(ui.label("Mit Gemini weiterdenken"))
-        addView(ui.small("Schickt deine Karte als Text an die Gemini-App (und in die Zwischenablage), damit Gemini übersehene Folgen und realistische Wahrscheinlichkeiten vorschlägt."), ui.lpMatch(top = 4))
+        addView(ui.small("Öffnet das Gemini-Overlay über dem Bildschirm. Deine Karte samt Analyse-Frage liegt in der Zwischenablage – im Gemini-Feld lange drücken → Einfügen."), ui.lpMatch(top = 4))
         addView(ui.rowOf(
-            ui.pill("An Gemini senden", true) { sendToGemini() },
-            ui.pill("Gemini öffnen") { openAssistant() }
+            ui.pill("✦ Im Gemini-Overlay besprechen", true) {
+                close(); android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AssistActivity.open(ctx, geminiPrompt()) }, 300)
+            },
+            ui.pill("Teilen …") { sendToGemini() }
         ), ui.lpMatch(top = 10))
     }
 

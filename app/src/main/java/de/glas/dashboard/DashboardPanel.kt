@@ -76,7 +76,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     private val start = StartPage(ui, close = { close() }, openProfile = { goTo("profile") })
     private val all: Map<String, Page> = linkedMapOf<String, Page>().apply {
         put("start", start)
-        put("gemini", GeminiPage(ui))
+        put("gemini", GeminiPage(ui) { close() })
         put("strategy", StrategyPage(ui) { close() })
         put("logic", LogicPage(ui))
         put("impl", ImplPage(ui))
