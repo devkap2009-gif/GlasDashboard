@@ -42,8 +42,18 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
     private val ctx = ui.ctx
     private val col = ui.column()
     override val view: View = ui.page(col)
-    private var tool = Prefs.int(ctx, "strat_tool", 4)
-    private val chipOrder = intArrayOf(4, 0, 1, 2, 3)   // Anzeige-Reihenfolge → Werkzeug
+    private var tool = Prefs.int(ctx, "strat_tool2", 5)
+    private val chipOrder = intArrayOf(5, 4, 0, 1, 2, 3)   // Anzeige-Reihenfolge → Werkzeug
+    private val chipNames = listOf("Schnell-Check", "Karte", "Ziele", "Vergleich", "SWOT", "Szenarien")
+    private val chipHelp = mapOf(
+        5 to "Entscheidung in 3 Schritten: Frage, Möglichkeiten, Folgen antippen – die App rechnet die beste Wahl aus.",
+        4 to "Alle Folgen als Mindmap. Knoten antippen zum Bearbeiten.",
+        0 to "Ein Ziel in Strategien und abhakbare Schritte zerlegen.",
+        1 to "Optionen nach gewichteten Kriterien vergleichen.",
+        2 to "Stärken, Schwächen, Chancen, Risiken sammeln.",
+        3 to "Mögliche Ausgänge mit Wahrscheinlichkeit und Wert – ergibt den Erwartungswert."
+    )
+    private lateinit var helpText: TextView
     private val box = ui.column()
     private var openGoal: Long? = null
 
@@ -51,12 +61,14 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
 
     private fun render() {
         box.removeAllViews()
+        if (::helpText.isInitialized) helpText.text = chipHelp[tool] ?: ""
         when (tool) {
             0 -> { val g = openGoal; if (g == null) goals() else goalDetail(g) }
             1 -> decision()
             2 -> swot()
             3 -> scenarios()
-            else -> mapTool()
+            4 -> mapTool()
+            else -> quick()
         }
     }
 
@@ -80,6 +92,118 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
     private fun meter(pct: Int) = ui.bar().apply { max = 100; progress = pct.coerceIn(0, 100) }
 
     // =====================================================================
+    // Schnell-Check: Frage → Möglichkeiten → Folgen (nur antippen)
+    // =====================================================================
+
+    private val likely = listOf("Selten" to 0.1, "Möglich" to 0.4, "Wahrscheinlich" to 0.7, "Fast sicher" to 0.95)
+    private val impact = listOf("Sehr schlecht" to -100.0, "Schlecht" to -40.0, "Gut" to 40.0, "Sehr gut" to 100.0)
+
+    private fun loadQuick(): JSONObject = Store.obj(ctx, "quick").also { q ->
+        if (!q.has("options")) {
+            q.put("question", "Soll ich nächstes Semester ein Auslandssemester machen?")
+            q.put("options", JSONArray()
+                .put(JSONObject().put("t", "Ja, ins Ausland").put("c", JSONArray()
+                    .put(JSONObject().put("t", "Neue Sprache & Kontakte").put("l", 2).put("i", 3))
+                    .put(JSONObject().put("t", "Höhere Kosten").put("l", 3).put("i", 1))
+                    .put(JSONObject().put("t", "Kurse werden nicht angerechnet").put("l", 1).put("i", 0))))
+                .put(JSONObject().put("t", "Nein, hierbleiben").put("c", JSONArray()
+                    .put(JSONObject().put("t", "Studium läuft planmäßig").put("l", 3).put("i", 2))
+                    .put(JSONObject().put("t", "Später ärgern, es nicht gemacht zu haben").put("l", 1).put("i", 1)))))
+        }
+    }
+
+    private fun quick() {
+        val q = loadQuick()
+        fun save() = Store.put(ctx, "quick", q)
+        val options = q.getJSONArray("options")
+
+        // Ergebnis ganz oben
+        val scores = options.objects().map { o ->
+            val cs = o.optJSONArray("c")?.objects() ?: emptyList()
+            val ev = cs.sumOf { likely[it.optInt("l").coerceIn(0, 3)].second * impact[it.optInt("i").coerceIn(0, 3)].second }
+            val risk = cs.filter { it.optInt("i") <= 1 }.maxOfOrNull { likely[it.optInt("l").coerceIn(0, 3)].second } ?: 0.0
+            Triple(o.optString("t"), ev, risk)
+        }
+        val res = ui.tile()
+        res.addView(ui.label("Ergebnis"))
+        if (scores.isEmpty()) res.addView(ui.small("Füge unten mindestens eine Möglichkeit hinzu."), ui.lpMatch(top = 6))
+        else {
+            val best = scores.maxByOrNull { it.second }!!
+            res.addView(ui.title("Empfehlung: ${best.first}"), ui.lpMatch(top = 6))
+            val maxAbs = scores.maxOf { abs(it.second) }.coerceAtLeast(1.0)
+            scores.sortedByDescending { it.second }.forEach { (name, ev, risk) ->
+                res.addView(ui.small("$name  ·  Bilanz ${"%+.0f".format(ev)}  ·  Risiko ${(risk * 100).toInt()} %"), ui.lpMatch(top = 10))
+                res.addView(meter(((ev / maxAbs + 1) * 50).toInt()), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(6)).apply { topMargin = ui.dp(4) })
+            }
+            res.addView(ui.small("Bilanz = Summe aus Wahrscheinlichkeit × Wirkung aller Folgen. Risiko = Chance der wahrscheinlichsten schlechten Folge."), ui.lpMatch(top = 10))
+        }
+        res.addView(ui.pill("Als Karte ansehen", true) { quickToMap(q) }, ui.lpWrap(top = 12))
+        box.addView(res)
+
+        // 1. Frage
+        val t1 = ui.tile()
+        t1.addView(ui.label("1 · Worum geht es?"))
+        val qIn = ui.input("Deine Entscheidung …").apply { setText(q.optString("question")) }
+        qIn.addTextChangedListener(saver { q.put("question", qIn.text.toString()); save() })
+        t1.addView(qIn, ui.lpMatch(top = 6))
+        box.addView(t1)
+
+        // 2. Möglichkeiten mit 3. Folgen
+        options.objects().forEachIndexed { oi, o ->
+            val t = ui.tile()
+            val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            head.addView(ui.label("Möglichkeit ${oi + 1}"), ui.weight())
+            head.addView(xBtn { options.remove(oi); save(); render() })
+            t.addView(head)
+            t.addView(ui.title(o.optString("t")).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f) })
+            val cs = o.optJSONArray("c") ?: JSONArray().also { o.put("c", it) }
+            cs.objects().forEachIndexed { ci, c ->
+                t.addView(ui.hline(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(1)).apply { topMargin = ui.dp(12) })
+                val r = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                r.addView(ui.body(c.optString("t"), 15f), ui.weight())
+                r.addView(xBtn { cs.remove(ci); save(); render() })
+                t.addView(r, ui.lpMatch(top = 6))
+                t.addView(ui.chips(likely.map { it.first }, c.optInt("l")) { c.put("l", it); save(); render() }, ui.lpMatch(top = 4))
+                t.addView(ui.chips(impact.map { it.first }, c.optInt("i")) { c.put("i", it); save(); render() }, ui.lpMatch(top = 6))
+            }
+            t.addView(addRow("Was könnte passieren?") { txt ->
+                cs.put(JSONObject().put("t", txt).put("l", 1).put("i", 2)); save(); render()
+            }, ui.lpMatch(top = 12))
+            box.addView(t)
+        }
+        val add = ui.tile()
+        add.addView(ui.label("2 · Möglichkeit hinzufügen"))
+        add.addView(addRow("z. B. Erst nächstes Jahr") { txt ->
+            options.put(JSONObject().put("t", txt).put("c", JSONArray())); save(); render()
+        }, ui.lpMatch(top = 6))
+        add.addView(ui.small("3 · Zu jeder Möglichkeit Folgen eintragen und antippen, wie wahrscheinlich und wie gut/schlecht sie sind."), ui.lpMatch(top = 10))
+        add.addView(ui.pill("Neu anfangen") { Store.put(ctx, "quick", JSONObject().put("question", "").put("options", JSONArray())); render() }, ui.lpWrap(top = 10))
+        box.addView(add)
+    }
+
+    /** Schnell-Check als Mindmap darstellen. */
+    private fun quickToMap(q: JSONObject) {
+        map.load(JSONObject())
+        val opts = q.getJSONArray("options").objects()
+        opts.forEach { o ->
+            val on = map.add(o.optString("t"), 1.0)
+            (o.optJSONArray("c")?.objects() ?: emptyList()).forEach { c ->
+                val cn = map.add(c.optString("t"), 0.0, impact[c.optInt("i").coerceIn(0, 3)].second)
+                map.link(on.id, cn.id, likely[c.optInt("l").coerceIn(0, 3)].second)
+            }
+        }
+        mapSel = null
+        Store.put(ctx, "map", map.toJson())
+        tool = 4; Prefs.setInt(ctx, "strat_tool2", 4)
+        // Chips neu aufbauen, damit „Karte“ markiert ist
+        col.removeViewAt(0)
+        col.addView(ui.chips(chipNames, chipOrder.indexOf(tool)) {
+            tool = chipOrder[it]; Prefs.setInt(ctx, "strat_tool2", tool); openGoal = null; render()
+        }, 0, ui.lpMatch(bottom = 6))
+        render()
+    }
+
+    // =====================================================================
     // Implikations-Karte (Mindmap mit Wahrscheinlichkeiten)
     // =====================================================================
 
@@ -89,6 +213,7 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
     }
     private var mapView: ImplMapView? = null
     private var mapSel: Int? = null
+    private var advanced = false
 
     private fun saveMap() { Store.put(ctx, "map", map.toJson()); mapView?.relayout() }
 
@@ -150,6 +275,29 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
             addView(ui.pill("+") { plus() })
         }
         val root = map.isRoot(n.id)
+        // Einfach: Wahrscheinlichkeit der eingehenden Folge per Antippen
+        val inc = map.incoming(n.id).firstOrNull()
+        if (inc != null && map.incoming(n.id).size == 1) {
+            t.addView(ui.small("Wie wahrscheinlich folgt das aus „${map.node(inc.a)?.text}“?"), ui.lpMatch(top = 10))
+            val cur = likely.indexOfFirst { abs(it.second - inc.p) < 0.06 }
+            t.addView(ui.chips(likely.map { it.first }, cur) { i -> inc.p = likely[i].second; saveMap(); renderEditor(); renderSummary() }, ui.lpMatch(top = 4))
+        }
+        t.addView(ui.small("Wie gut oder schlecht wäre das?"), ui.lpMatch(top = 10))
+        val curI = impact.indexOfFirst { n.value != null && abs(it.second - (n.value ?: 0.0)) < 1 }
+        t.addView(ui.chips(impact.map { it.first } + "Neutral", if (n.value == null) 4 else curI) { i ->
+            n.value = if (i == 4) null else impact[i].second; saveMap(); renderEditor(); renderSummary()
+        }, ui.lpMatch(top = 4))
+        t.addView(ui.label("Neue Folge"), ui.lpMatch(top = 14))
+        t.addView(addRow("Was folgt daraus?") { txt ->
+            val c = map.add(txt); map.link(n.id, c.id, 0.4); mapSel = c.id; saveMap(); mapView?.selected = c.id; renderEditor(); renderSummary()
+        }, ui.lpMatch(top = 6))
+        t.addView(ui.rowOf(
+            ui.pill("Knoten löschen") { map.remove(n.id); mapSel = null; mapView?.selected = null; saveMap(); renderEditor(); renderSummary() },
+            ui.pill("Fertig", true) { mapSel = null; mapView?.selected = null; renderEditor() },
+            ui.pill(if (advanced) "Weniger ▴" else "Mehr ▾") { advanced = !advanced; renderEditor() }
+        ), ui.lpMatch(top = 14))
+        if (!advanced) { editorBox.addView(t); return }
+        t.addView(ui.label("Erweitert"), ui.lpMatch(top = 16))
         t.addView(stepper(if (root) "Wahrscheinlichkeit (Ausgang)" else "Eigene Grundchance", MapModel.pct(n.base),
             { n.base = ((n.base - 0.1).coerceAtLeast(0.0) * 100).toInt() / 100.0; saveMap(); renderEditor(); renderSummary() },
             { n.base = ((n.base + 0.1).coerceAtMost(1.0) * 100).toInt() / 100.0; saveMap(); renderEditor(); renderSummary() }), ui.lpMatch(top = 8))
@@ -171,10 +319,6 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
             row.addView(xBtn { map.edges.remove(e); saveMap(); renderEditor(); renderSummary() })
             t.addView(row)
         }
-        t.addView(ui.label("Neue Folge"), ui.lpMatch(top = 14))
-        t.addView(addRow("Was folgt daraus?") { txt ->
-            val c = map.add(txt); map.link(n.id, c.id, 0.5); mapSel = c.id; saveMap(); mapView?.selected = c.id; renderEditor(); renderSummary()
-        }, ui.lpMatch(top = 6))
         t.addView(addRow("Was wird dadurch verhindert?") { txt ->
             val c = map.add(txt, 0.5); map.link(n.id, c.id, 0.5, neg = true); saveMap(); renderEditor(); renderSummary()
         }, ui.lpMatch(top = 6))
@@ -186,10 +330,6 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
                 map.link(n.id, others[i].id, 0.5); saveMap(); renderEditor(); renderSummary()
             }, ui.lpMatch(top = 6))
         }
-        t.addView(ui.rowOf(
-            ui.pill("Knoten löschen") { map.remove(n.id); mapSel = null; mapView?.selected = null; saveMap(); renderEditor(); renderSummary() },
-            ui.pill("Fertig") { mapSel = null; mapView?.selected = null; renderEditor() }
-        ), ui.lpMatch(top = 14))
         editorBox.addView(t)
     }
 
@@ -603,9 +743,11 @@ class StrategyPage(private val ui: Ui, private val close: () -> Unit = {}) : Pag
 
     // Ganz am Ende, damit alle Felder (z. B. die Karte) schon existieren
     init {
-        col.addView(ui.chips(listOf("Implikations-Karte", "Ziele", "Entscheidung", "SWOT", "Szenarien"), chipOrder.indexOf(tool).coerceAtLeast(0)) {
-            tool = chipOrder[it]; Prefs.setInt(ctx, "strat_tool", tool); openGoal = null; render()
-        }, ui.lpMatch(bottom = 10))
+        col.addView(ui.chips(chipNames, chipOrder.indexOf(tool).coerceAtLeast(0)) {
+            tool = chipOrder[it]; Prefs.setInt(ctx, "strat_tool2", tool); openGoal = null; render()
+        }, ui.lpMatch(bottom = 6))
+        helpText = ui.small("")
+        col.addView(helpText, ui.lpMatch(bottom = 10))
         col.addView(box)
         render()
     }
