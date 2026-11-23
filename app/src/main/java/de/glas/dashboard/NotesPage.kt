@@ -14,21 +14,20 @@ import android.widget.TextView
 import android.content.res.ColorStateList
 
 /** Notizen (beliebig viele, großer Editor) und Aufgaben. */
-class NotesPage(private val ui: Ui) : Page {
+class NotesPage(private val ui: Ui, private val openNote: (Long) -> Unit) : Page {
     override val key = "notes"
     override val title = "Notizen"
 
     private val ctx = ui.ctx
     private val col = ui.column()
     override val view: View = ui.page(col)
-    private var editing: Long? = null
-
     init { render() }
 
-    private fun render() {
+    override fun onShow() = render()
+
+    fun render() {
         col.removeAllViews()
-        val id = editing
-        if (id != null) editor(id) else list()
+        list()
     }
 
     private fun list() {
@@ -36,7 +35,7 @@ class NotesPage(private val ui: Ui) : Page {
         head.addView(ui.label("Notizen"), ui.weight())
         head.addView(ui.pill("+ Neue Notiz", true) {
             val n = Note(System.currentTimeMillis(), "", "", System.currentTimeMillis())
-            Prefs.saveNote(ctx, n); editing = n.id; render()
+            Prefs.saveNote(ctx, n); openNote(n.id)
         })
         col.addView(head, ui.lpMatch(bottom = 10))
 
@@ -57,7 +56,7 @@ class NotesPage(private val ui: Ui) : Page {
                     addView(ui.label(fmt.format(java.util.Date(n.updated))).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f) })
                     addView(ui.title(n.title.ifBlank { "Ohne Titel" }).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f); ui.ellipsize(this, 1) }, ui.lpMatch(top = 4))
                     if (n.body.isNotBlank()) addView(ui.small(n.body).also { ui.ellipsize(it, 3) }, ui.lpMatch(top = 4))
-                    setOnClickListener { editing = n.id; render() }
+                    setOnClickListener { openNote(n.id) }
                 })
             }
         }
@@ -112,47 +111,6 @@ class NotesPage(private val ui: Ui) : Page {
         t.addView(box)
         renderTodos()
         col.addView(t, ui.lpMatch(top = 6))
-    }
-
-    private fun editor(id: Long) {
-        val note = Prefs.notes(ctx).firstOrNull { it.id == id } ?: run { editing = null; list(); return }
-        val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        lateinit var titleIn: EditText
-        lateinit var bodyIn: EditText
-        fun save() {
-            Prefs.saveNote(ctx, note.copy(title = titleIn.text.toString(), body = bodyIn.text.toString(), updated = System.currentTimeMillis()))
-        }
-        head.addView(ui.pill("← Fertig", true) {
-            save()
-            val n = Prefs.notes(ctx).firstOrNull { it.id == id }
-            if (n != null && n.title.isBlank() && n.body.isBlank()) Prefs.deleteNote(ctx, id)
-            editing = null; render()
-        })
-        head.addView(View(ctx), ui.weight())
-        head.addView(ui.pill("Löschen") { Prefs.deleteNote(ctx, id); editing = null; render() })
-        col.addView(head, ui.lpMatch(bottom = 10))
-
-        titleIn = ui.input("Titel").apply {
-            setText(note.title)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-        }
-        bodyIn = ui.input("Schreib los …", lines = 16).apply { setText(note.body) }
-        col.addView(titleIn, ui.lpMatch(bottom = 8))
-        col.addView(bodyIn, ui.lpMatch(bottom = 8))
-        val count = ui.small("")
-        col.addView(count)
-        val w = object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                save()
-                val words = bodyIn.text.split(Regex("\\s+")).count { it.isNotBlank() }
-                count.text = "$words Wörter · automatisch gespeichert"
-            }
-        }
-        titleIn.addTextChangedListener(w); bodyIn.addTextChangedListener(w)
-        w.afterTextChanged(null)
     }
 
     override fun onHide() { /* Notizen speichern sich beim Tippen */ }

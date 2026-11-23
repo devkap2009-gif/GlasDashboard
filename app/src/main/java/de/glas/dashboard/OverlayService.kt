@@ -59,6 +59,7 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WindowManager::class.java)
+        Holo.setAccent(Prefs.accent(this))
         running = true
     }
 
@@ -86,6 +87,15 @@ class OverlayService : Service() {
         super.onDestroy()
     }
 
+    /** Panel neu aufbauen (z. B. nach Farbwechsel) und optional einen Bereich öffnen. */
+    fun rebuildPanel(openKey: String?) {
+        Holo.setAccent(Prefs.accent(this))
+        panel?.destroy()
+        panel = null
+        removeStrip(); addStrip()
+        if (openKey != null) panel().openAt(openKey)
+    }
+
     private fun panel(): DashboardPanel = panel ?: DashboardPanel(this, wm).also { panel = it }
 
     // ---------- Benachrichtigung / Vordergrunddienst ----------
@@ -111,7 +121,7 @@ class OverlayService : Service() {
         val n: Notification = Notification.Builder(this, CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Dashboard bereit")
-            .setContentText("Zone antippen und halten – oder mit zwei Fingern nach unten wischen")
+            .setContentText("Punkt antippen = Dashboard · gedrückt halten = neue Notiz")
             .setContentIntent(openPi)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null as Icon?, "Beenden", stopPi).build())
@@ -126,6 +136,7 @@ class OverlayService : Service() {
     // ---------- Wischzone ----------
 
     private fun addStrip() {
+        if (Prefs.trigger(this) == 0) { addDot(); return }
         val pos = Prefs.position(this)
         val mode = Prefs.openMode(this)
         val thick = dp(Prefs.stripHeight(this))
@@ -157,7 +168,7 @@ class OverlayService : Service() {
             val handle = View(this).apply {
                 background = GradientDrawable().apply {
                     cornerRadius = dpf(3f)
-                    setColor(0xB37FDBFF.toInt())
+                    setColor(Holo.a(0xB3))
                 }
             }
             v.addView(handle, if (top) FrameLayout.LayoutParams(dp(56), dp(5), Gravity.CENTER)
@@ -237,6 +248,80 @@ class OverlayService : Service() {
                             Prefs.setPosition(this, if (right) 1 else 2)
                             runCatching { wm.updateViewLayout(v, lp) }
                         }
+                    }
+                }
+            }
+            true
+        }
+        wm.addView(v, lp)
+        strip = v
+    }
+
+    /** Schwebender Punkt: Tippen = Dashboard, gedrückt halten = neue Notiz, ziehen = verschieben. */
+    private fun addDot() {
+        val size = dp(56)
+        val screenW = resources.displayMetrics.widthPixels
+        val screenH = resources.displayMetrics.heightPixels
+        val lp = WindowManager.LayoutParams(
+            size, size,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = Prefs.int(this@OverlayService, "dot_x", screenW - size)
+            y = Prefs.int(this@OverlayService, "dot_y", screenH / 3)
+        }
+        val v = FrameLayout(this)
+        val dot = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Holo.a(0xD9))
+                setStroke(dp(2), 0xCCFFFFFF.toInt())
+            }
+            elevation = dpf(6f)
+        }
+        v.addView(dot, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
+        val ring = View(this).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0); setStroke(dp(1), Holo.a(0x66)) }
+        }
+        v.addView(ring, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER))
+
+        val slop = dpf(10f)
+        var downX = 0f; var downY = 0f; var sx = 0; var sy = 0
+        var moving = false; var held = false
+        val hold = Runnable {
+            held = true
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            panel().openQuickNote()
+        }
+        v.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX; downY = e.rawY; sx = lp.x; sy = lp.y; moving = false; held = false
+                    dot.animate().scaleX(0.85f).scaleY(0.85f).setDuration(90).start()
+                    v.postDelayed(hold, 450)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val mx = e.rawX - downX; val my = e.rawY - downY
+                    if (!held && (moving || abs(mx) > slop || abs(my) > slop)) {
+                        moving = true
+                        v.removeCallbacks(hold)
+                        lp.x = (sx + mx.toInt()).coerceIn(0, screenW - size)
+                        lp.y = (sy + my.toInt()).coerceIn(0, screenH - size)
+                        runCatching { wm.updateViewLayout(v, lp) }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.removeCallbacks(hold)
+                    dot.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    if (moving) {
+                        lp.x = if (lp.x + size / 2 > screenW / 2) screenW - size else 0   // an den Rand
+                        runCatching { wm.updateViewLayout(v, lp) }
+                        Prefs.setInt(this, "dot_x", lp.x); Prefs.setInt(this, "dot_y", lp.y)
+                    } else if (!held && e.actionMasked == MotionEvent.ACTION_UP) {
+                        v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                        panel().open()
                     }
                 }
             }

@@ -162,6 +162,9 @@ class Ui(val ctx: Context) {
         if (monoFont) typeface = Typeface.MONOSPACE
         background = cut(Holo.PANEL_DEEP, Holo.LINE, 10f)
         setPadding(dp(12), dp(10), dp(12), dp(10))
+        // Tastatur zuverlässig öffnen (Overlay-Fenster)
+        setOnFocusChangeListener { v, has -> if (has) showKeyboard(v) }
+        setOnClickListener { showKeyboard(it) }
         if (lines > 1) {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             minLines = lines; gravity = Gravity.TOP or Gravity.START
@@ -198,12 +201,20 @@ class Ui(val ctx: Context) {
         }
     }
 
-    fun bar() = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
-        progressTintList = ColorStateList.valueOf(Holo.ICE)
-        progressBackgroundTintList = ColorStateList.valueOf(0x337FDBFF)
+    fun showKeyboard(v: View) {
+        v.post {
+            v.requestFocus()
+            ctx.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                ?.showSoftInput(v, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
-    fun hline() = View(ctx).apply { setBackgroundColor(0x267FDBFF) }
+    fun bar() = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+        progressTintList = ColorStateList.valueOf(Holo.ICE)
+        progressBackgroundTintList = ColorStateList.valueOf(Holo.a(0x33))
+    }
+
+    fun hline() = View(ctx).apply { setBackgroundColor(Holo.a(0x26)) }
 
     fun ellipsize(t: TextView, lines: Int) { t.maxLines = lines; t.ellipsize = TextUtils.TruncateAt.END }
 }

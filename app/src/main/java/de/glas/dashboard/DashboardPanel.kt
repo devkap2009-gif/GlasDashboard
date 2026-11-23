@@ -17,9 +17,13 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.InputMethodManager
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -71,13 +75,15 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
     private val start = StartPage(ui, close = { close() }, openProfile = { goTo("profile") })
     private val all: Map<String, Page> = linkedMapOf<String, Page>().apply {
         put("start", start)
+        put("strategy", StrategyPage(ui))
         put("logic", LogicPage(ui))
         put("impl", ImplPage(ui))
         put("games", GamesPage(ui))
-        put("notes", NotesPage(ui))
+        put("notes", NotesPage(ui) { id -> openNote(id) })
     }.let { m ->
         val withProfile = LinkedHashMap(m)
-        withProfile["profile"] = ProfilePage(ui, { if (this::pages.isInitialized) pages.map { it.key to it.title } else emptyList() }, { keys -> reorder(keys) })
+        withProfile["profile"] = ProfilePage(ui, { if (this::pages.isInitialized) pages.map { it.key to it.title } else emptyList() },
+            { keys -> reorder(keys) }, { color -> changeAccent(color) })
         withProfile
     }
     private lateinit var pages: List<Page>
@@ -113,7 +119,12 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         pages = orderedPages()
         build()
         root.background = scrim
-        root.onBack = { close() }
+        root.onBack = { if (editorLayer != null) closeEditor() else close() }
+        root.setOnApplyWindowInsetsListener { _, ins ->
+            imeBottom = if (Build.VERSION.SDK_INT >= 30) ins.getInsets(WindowInsets.Type.ime()).bottom else 0
+            applyIme()
+            ins
+        }
         root.onDrag = { dy -> anim?.cancel(); setProgress(1f + dy / (screenH * 0.45f)) }
         root.onRelease = { dy -> settle(dy > -ctx.dpf(70f)) }
     }
@@ -213,6 +224,104 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
         highlightTab(pager.currentItem)
     }
 
+    // ---------- Notiz-Editor (eigene Ebene über allem) ----------
+
+    private var editorLayer: View? = null
+    private var editorSave: (() -> Unit)? = null
+    private var editorId: Long = 0
+    private var imeBottom = 0
+
+    private fun applyIme() {
+        editorLayer?.let { it.setPadding(it.paddingLeft, it.paddingTop, it.paddingRight, ctx.dp(12) + imeBottom) }
+        container.setPadding(0, container.paddingTop, 0, imeBottom)
+    }
+
+    fun openNote(id: Long) {
+        if (editorLayer != null) closeEditor()
+        val note = Prefs.notes(ctx).firstOrNull { it.id == id } ?: return
+        editorId = id
+        val layer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xF2050B18.toInt())
+            setPadding(ctx.dp(14), ctx.statusBarHeight() + ctx.dp(10), ctx.dp(14), ctx.dp(12))
+            isClickable = true
+        }
+        val count = ui.small("")
+        val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        head.addView(ui.pill("← Fertig", true) { closeEditor() })
+        head.addView(count.apply { gravity = Gravity.CENTER }, ui.weight())
+        head.addView(ui.pill("Löschen") {
+            Prefs.deleteNote(ctx, id); editorSave = null; closeEditor()
+        })
+        layer.addView(head, ui.lpMatch(bottom = 12))
+        val titleIn: EditText = ui.input("Titel").apply {
+            setText(note.title)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT
+        }
+        val bodyIn: EditText = ui.input("Schreib los …", lines = 4).apply {
+            setText(note.body)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+            setLineSpacing(0f, 1.25f)
+            isVerticalScrollBarEnabled = true
+            setHorizontallyScrolling(false)
+        }
+        layer.addView(titleIn, ui.lpMatch(bottom = 10))
+        layer.addView(bodyIn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        val save = {
+            Prefs.saveNote(ctx, note.copy(title = titleIn.text.toString(), body = bodyIn.text.toString(), updated = System.currentTimeMillis()))
+        }
+        editorSave = save
+        val w = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                editorSave?.invoke()
+                val words = bodyIn.text.split(Regex("\\s+")).count { it.isNotBlank() }
+                count.text = "$words Wörter · gespeichert"
+            }
+        }
+        titleIn.addTextChangedListener(w); bodyIn.addTextChangedListener(w)
+        count.text = "Neue Notiz"
+        root.addView(layer, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        editorLayer = layer
+        applyIme()
+        val target = if (note.title.isBlank() && note.body.isBlank()) titleIn else bodyIn
+        target.postDelayed({
+            target.requestFocus()
+            if (target === bodyIn) bodyIn.setSelection(bodyIn.text.length)
+            ui.showKeyboard(target)
+        }, 250)
+    }
+
+    fun closeEditor() {
+        val layer = editorLayer ?: return
+        editorSave?.invoke()
+        editorSave = null
+        Prefs.notes(ctx).firstOrNull { it.id == editorId }?.let { if (it.title.isBlank() && it.body.isBlank()) Prefs.deleteNote(ctx, it.id) }
+        hideKeyboard()
+        root.removeView(layer)
+        editorLayer = null
+        (all["notes"] as? NotesPage)?.render()
+    }
+
+    /** Gedrückt halten auf dem Punkt: Panel öffnen und sofort eine neue Notiz anlegen. */
+    fun openQuickNote() {
+        settle(true)
+        goTo("notes")
+        val n = Note(System.currentTimeMillis(), "", "", System.currentTimeMillis())
+        Prefs.saveNote(ctx, n)
+        openNote(n.id)
+    }
+
+    fun openAt(key: String) { settle(true); goTo(key) }
+
+    private fun changeAccent(color: Int) {
+        Prefs.setAccent(ctx, color)
+        root.post { (ctx as? OverlayService)?.rebuildPanel("profile") }
+    }
+
     // ---------- öffentliche Steuerung ----------
 
     fun drag(p: Float) { anim?.cancel(); attach(); setProgress(p) }
@@ -260,6 +369,7 @@ class DashboardPanel(private val ctx: Context, private val wm: WindowManager) {
 
     private fun detach() {
         if (!attached) return
+        closeEditor()
         pages.forEach { p -> runCatching { p.onHide() } }
         runCatching { ctx.unregisterReceiver(batteryReceiver) }
         runCatching { wm.removeView(root) }

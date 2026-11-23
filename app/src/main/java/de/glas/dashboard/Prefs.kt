@@ -57,6 +57,13 @@ object Prefs {
         sp(c).edit().putString("journal", a.toString()).apply()
     }
 
+    fun accent(c: Context) = sp(c).getInt("accent", Holo.DEFAULT_ACCENT)
+    fun setAccent(c: Context, v: Int) = sp(c).edit().putInt("accent", v).apply()
+
+    /** 0 = schwebender Punkt, 1 = Zone/Griff */
+    fun trigger(c: Context) = sp(c).getInt("trigger", 0)
+    fun setTrigger(c: Context, v: Int) = sp(c).edit().putInt("trigger", v).apply()
+
     fun int(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
     fun setInt(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
     fun str(c: Context, k: String, d: String) = sp(c).getString(k, d) ?: d
@@ -68,7 +75,7 @@ object Prefs {
     fun focusTotal(c: Context) = sp(c).getInt("focus_total", 0)
 
     fun pageOrder(c: Context): List<String> =
-        (sp(c).getString("page_order", null) ?: "start,logic,impl,games,notes,profile").split(',').filter { it.isNotBlank() }
+        (sp(c).getString("page_order", null) ?: "start,strategy,logic,impl,games,notes,profile").split(',').filter { it.isNotBlank() }
     fun setPageOrder(c: Context, keys: List<String>) = sp(c).edit().putString("page_order", keys.joinToString(",")).apply()
 
     /** Griff-Position in Pixeln (y), -1 = Standard */

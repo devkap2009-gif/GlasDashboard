@@ -11,7 +11,8 @@ import android.widget.TextView
 class ProfilePage(
     private val ui: Ui,
     private val pageTitles: () -> List<Pair<String, String>>,   // key to title, in aktueller Reihenfolge
-    private val onOrderChanged: (List<String>) -> Unit
+    private val onOrderChanged: (List<String>) -> Unit,
+    private val onAccent: (Int) -> Unit
 ) : Page {
     override val key = "profile"
     override val title = "Profil"
@@ -37,6 +38,7 @@ class ProfilePage(
     private fun render() {
         col.removeAllViews()
         if (edit) editView() else showView()
+        accentTile()
         orderTile()
     }
 
@@ -117,6 +119,41 @@ class ProfilePage(
         })
         row.addView(ui.pill("Abbrechen") { edit = false; render() }, ui.lpWrap(start = 8))
         t.addView(row, ui.lpMatch(top = 14))
+        col.addView(t)
+    }
+
+    private fun accentTile() {
+        val t = ui.tile()
+        t.addView(ui.label("Akzentfarbe"))
+        val current = Prefs.accent(ctx)
+        var row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        Holo.presets.forEachIndexed { i, (name, c) ->
+            if (i % 4 == 0 && i > 0) { t.addView(row, ui.lpMatch(top = 8)); row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL } }
+            row.addView(ui.column().apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                addView(View(ctx).apply {
+                    background = CutDrawable(ui.dpf(10f), c, if (c == current) Holo.WHITE else 0x33FFFFFF, ui.dpf(if (c == current) 2.5f else 1f), Holo.WHITE)
+                    contentDescription = name
+                    setOnClickListener { onAccent(c) }
+                }, LinearLayout.LayoutParams(ui.dp(52), ui.dp(44)))
+                addView(ui.small(name).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f); gravity = Gravity.CENTER })
+            }, ui.weight())
+        }
+        t.addView(row, ui.lpMatch(top = 8))
+        // eigene Farbe
+        val hex = ui.input("#RRGGBB").apply { setText(String.format("#%06X", current and 0xFFFFFF)) }
+        val r = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        r.addView(hex, ui.weight())
+        val err = ui.small("")
+        r.addView(ui.pill("Übernehmen", true) {
+            val txt = hex.text.toString().trim().removePrefix("#")
+            val v = if (txt.length == 6) txt.toLongOrNull(16) else null
+            if (v == null) err.text = "Bitte 6 Hex-Stellen eingeben, z. B. #7FDBFF"
+            else onAccent((0xFF000000 or v).toInt())
+        }, ui.lpWrap(start = 8))
+        t.addView(ui.small("Eigene Farbe (Hex)"), ui.lpMatch(top = 14))
+        t.addView(r, ui.lpMatch(top = 6))
+        t.addView(err)
         col.addView(t)
     }
 

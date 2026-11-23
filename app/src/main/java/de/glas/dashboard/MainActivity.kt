@@ -38,6 +38,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Holo.setAccent(Prefs.accent(this))
 
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -84,6 +85,14 @@ class MainActivity : Activity() {
         }
         listOf(btnOverlay, btnNotif, btnBattery, btnListener, btnService, btnTest).forEach { col.addView(it, lp(bottom = 10)) }
 
+        // Auslöser
+        col.addView(text("Auslöser", 15f).apply { setPadding(0, dp(18), 0, dp(4)) })
+        col.addView(radios(listOf("Schwebender Punkt (tippen = Dashboard, halten = Notiz)", "Zone / Griff am Rand"), Prefs.trigger(this)) { i ->
+            Prefs.setTrigger(this, i)
+            refreshStrip()
+        })
+        col.addView(text("Nur für „Zone / Griff“:", 13f).apply { alpha = 0.7f; setPadding(0, dp(10), 0, 0) })
+
         // Wie und wo öffnen
         col.addView(text("Öffnen durch", 15f).apply { setPadding(0, dp(18), 0, dp(4)) })
         col.addView(radios(listOf("Gedrückt halten", "Zwei-Finger-Wisch nach unten", "Beides"),
@@ -129,6 +138,7 @@ class MainActivity : Activity() {
 
         col.addView(text(
             "So öffnest du das Dashboard:\n" +
+            "• Den leuchtenden Punkt antippen. Gedrückt halten öffnet direkt eine neue Notiz. Ziehen verschiebt ihn.\n" +
             "• Auf die Zone (den kleinen Griff) tippen und kurz gedrückt halten, bis es vibriert.\n" +
             "• Oder zwei Finger in der Zone ansetzen und nach unten ziehen (Position „Oben“).\n" +
             "• Griff verschieben: mit einem Finger ziehen – am Rand rastet er ein.\n" +
@@ -166,7 +176,7 @@ class MainActivity : Activity() {
         }
         status.background = GradientDrawable().apply {
             cornerRadius = dpf(14f)
-            setColor(if (running) 0x337FDBFF else 0x1FFFFFFF)
+            setColor(if (running) Holo.a(0x33) else 0x1FFFFFFF)
         }
     }
 

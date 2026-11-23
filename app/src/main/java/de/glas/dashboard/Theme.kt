@@ -12,14 +12,32 @@ import kotlin.math.min
 
 /** Farben des „Arktis-Kommando“-Designs: Marineblau, Eisblau, Weiß. */
 object Holo {
-    val ICE = 0xFF7FDBFF.toInt()
-    val ICE_DIM = 0x997FDBFF.toInt()
+    /** Akzentfarbe – wird über [setAccent] angepasst */
+    var ICE = 0xFF7FDBFF.toInt(); private set
+    var ICE_DIM = 0x997FDBFF.toInt(); private set
     val WHITE = 0xFFFFFFFF.toInt()
     val TEXT_DIM = 0xB3D6EEFF.toInt()
     val NAVY = 0xFF050B18.toInt()
     val PANEL = 0xCC0A1830.toInt()
     val PANEL_DEEP = 0xE6061024.toInt()
-    val LINE = 0x597FDBFF
+    var LINE = 0x597FDBFF; private set
+
+    val DEFAULT_ACCENT = 0xFF7FDBFF.toInt()
+
+    /** Akzent mit eigener Deckkraft (0..255) */
+    fun a(alpha: Int) = (alpha shl 24) or (ICE and 0x00FFFFFF)
+
+    fun setAccent(color: Int) {
+        ICE = color or 0xFF000000.toInt()
+        ICE_DIM = a(0x99)
+        LINE = a(0x59)
+    }
+
+    val presets = listOf(
+        "Eisblau" to 0xFF7FDBFF.toInt(), "Smaragd" to 0xFF5CF2B0.toInt(), "Gold" to 0xFFFFD166.toInt(),
+        "Bernstein" to 0xFFFF9F43.toInt(), "Rot" to 0xFFFF5C6C.toInt(), "Magenta" to 0xFFFF6BD6.toInt(),
+        "Violett" to 0xFFB18CFF.toInt(), "Weiß" to 0xFFE8F1FF.toInt()
+    )
     val SCRIM = 0xFF020814.toInt()
 
     val label: Typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)

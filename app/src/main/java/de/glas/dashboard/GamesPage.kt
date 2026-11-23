@@ -58,8 +58,8 @@ class ChessView(ctx: Context, val game: Chess, val onChange: () -> Unit) : View(
             paint.color = if (isLight) light else dark
             c.drawRect(x, y, x + s, y + s, paint)
             val lm = game.lastMove
-            if (lm != null && (sq == lm.from || sq == lm.to)) { paint.color = 0x447FDBFF; c.drawRect(x, y, x + s, y + s, paint) }
-            if (sq == selected) { paint.color = 0x887FDBFF.toInt(); c.drawRect(x, y, x + s, y + s, paint) }
+            if (lm != null && (sq == lm.from || sq == lm.to)) { paint.color = Holo.a(0x44); c.drawRect(x, y, x + s, y + s, paint) }
+            if (sq == selected) { paint.color = Holo.a(0x88); c.drawRect(x, y, x + s, y + s, paint) }
             if (sq == kingSq) { paint.color = 0x99FF5A5A.toInt(); c.drawRect(x, y, x + s, y + s, paint) }
         }
         // Koordinaten
@@ -93,7 +93,7 @@ class ChessView(ctx: Context, val game: Chess, val onChange: () -> Unit) : View(
             c.drawText(sym, cx, cy, glyph)
         }
         // Zielfelder
-        paint.color = 0xCC7FDBFF.toInt()
+        paint.color = Holo.a(0xCC)
         for (m in targets) {
             val screen = screenSq(m.to)
             val cx = (screen % 8) * s + s / 2; val cy = (screen / 8) * s + s / 2
